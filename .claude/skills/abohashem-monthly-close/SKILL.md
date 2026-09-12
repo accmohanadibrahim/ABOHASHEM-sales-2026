@@ -71,8 +71,12 @@ have actually bitten:
    «حسابات الموردين» — money the company *owes*. It arrived in the same upload
    as the seven customer files. Including it inflates receivables by ~1.05M.
 4. **A rep who did not file.** «محمود السيد» filed in July, not in September.
-   His customers are reported as dropped. **No balance is carried forward** to
-   fill the gap — a stale balance presented as current is a fabricated number.
+   **Leave his file out of `AR_SNAPSHOT_FILES`** and name his customers in the
+   data-quality report as missing. Do not carry the balance forward, and do not
+   keep it tagged with its own older date — that looks like the careful option
+   and is worse: a snapshot holding balances struck on two different days makes
+   the debt total the sum of two moments, a figure that describes no day while
+   presenting itself as today's. A hole you can see beats one inside a total.
 5. **Two files, same month, different basis.** Both August collections files are
    real; one is cash receipts (سدادات), the other adds credit notes and old-return
    settlements. Every other month in the series is on the cash basis, so August
@@ -82,9 +86,33 @@ have actually bitten:
    one, never globbed, because the filename *is* the official customer→rep
    assignment. A glob would guess it.
 
-> **Gate:** every landed file appears in `config.py` with its total and its
-> verdict — including the ones you decided *not* to read, and why. A file that
-> is simply absent from config.py is indistinguishable from one nobody noticed.
+**A PDF sales-invoice month is registered twice.** The path stays in `config.py`,
+but `analysis/01_parse_invoices.py` also lists the months to read, *by constant
+name*: `PDF_MONTHS = [("SRC_JULY_PDF", "july_2026"), …]`. Add the one line; never
+a new parser. Missing it fails silently in the worst way — the dashboard reads
+the new invoices, the analysis pipeline does not, every check stays green, and
+revenue, customer count and month count all quietly keep last month's values.
+`references/sources.md` has the detail.
+
+> **Gate:** two things, and run the second rather than reasoning about it.
+>
+> 1. Every landed file appears in `config.py` with its total and its verdict —
+>    including the ones you decided *not* to read, and why. A file simply absent
+>    from config.py is indistinguishable from one nobody noticed.
+>
+> 2. No month is registered only once:
+>
+> ```bash
+> python3 - <<'PY'
+> import importlib.util, re, pathlib
+> s = importlib.util.spec_from_file_location('cfg', 'executive_dashboard/src/config.py')
+> c = importlib.util.module_from_spec(s); s.loader.exec_module(c)
+> months = set(re.findall(r'\("(SRC_\w+)"',
+>     pathlib.Path('analysis/01_parse_invoices.py').read_text(encoding='utf-8')))
+> missing = [n for n in dir(c) if re.fullmatch(r'SRC_\w+_PDF', n) and n not in months]
+> print("NOT READ BY THE PIPELINE:", missing or "none")
+> PY
+> ```
 
 ## 2. Set the three dates — and derive the fourth
 
@@ -168,6 +196,27 @@ looks like it succeeded.
 Dependencies install from the pinned `requirements.txt`. A newer `statsmodels`
 than the pinned 0.14.6 shifts the VIF diagnostics and makes every rebuild look
 like a data change when nothing changed.
+
+**A rebuild with no data change still dirties three files.**
+`executive_dashboard/data.js` carries `meta.generated_utc`, and the PDF and the
+XLSX embed build dates, so each rebuild re-stamps them. Check before committing:
+if the only difference is that date, `git checkout --` them. Committing the
+re-stamp claims a new edition was cut when nothing was recut, and it churns two
+binaries in the diff for nothing. `generated_utc` is the build date, a fourth
+thing distinct from the three dates in step 2.
+
+```bash
+# figure-level diff of the payload, ignoring the stamp
+git stash list >/dev/null; python3 - <<'PY'
+import json, subprocess
+def load(t): i=t.index('{'); return json.loads(t[i:t.rindex('}')+1].replace('<\\/','</'))
+old = load(subprocess.run(['git','show','HEAD:executive_dashboard/data.js'],
+                          capture_output=True, text=True).stdout)
+new = load(open('executive_dashboard/data.js', encoding='utf-8').read())
+old['meta'].pop('generated_utc', None); new['meta'].pop('generated_utc', None)
+print("figures identical" if old == new else "FIGURES MOVED — this is a real change")
+PY
+```
 
 ## 5. Verify
 

@@ -83,15 +83,20 @@ exist.
 
 ### 4. A rep who did not file
 
-`محمود السيد` filed on 16 July and not on 3 September. His customers are reported
-as **dropped**, and no balance is carried forward from July to fill the hole.
+`محمود السيد` filed on 16 July and not on 3 September.
 
-Carrying a July balance into a September snapshot presents a stale number as a
-current count. That is the "never turn missing data into zero" rule in its other
-form: never turn missing data into last month's number either.
+**Do this:** leave his file out of `AR_SNAPSHOT_FILES` entirely, and name his
+customers in `reports/data_quality_report.md` as missing from the snapshot.
 
-**Rule:** a rep missing from this round is named in the data-quality report, not
-back-filled.
+**Do not** carry his July balance forward, and do not keep it with its own older
+date beside the others. The second one looks like the careful option and is
+worse: a snapshot holding balances struck on two different days makes
+"إجمالي المديونية" the sum of two different moments — a figure that describes no
+day at all, while still presenting itself as today's. Dropping him leaves a hole
+you can see and say out loud; tagging him hides one inside a total.
+
+That is "never turn missing data into zero" in its other form: never turn missing
+data into last month's number either.
 
 ### 5. Two files, same month, different basis
 
@@ -127,11 +132,46 @@ would guess the mapping and would silently pick up file 3 above.
 
 **Rule:** list balance files one by one, with the rep stated.
 
-## After registering
+## One path, two registrations
 
-Nothing else in the pipeline needs a path. Every downstream script reads
-`config.py` or the processed outputs. If you find yourself typing a filename
-into a second place, that is the bug.
+The path is written once, in `config.py`. But a **PDF sales-invoice month** has a
+second registration, and missing it is silent:
+`analysis/01_parse_invoices.py` carries the list of months to read, by constant
+name:
+
+```python
+# The PDF months, in the shared parser's terms: (config attribute, source tag).
+# Adding a month means adding its path to executive_dashboard/src/config.py and
+# one line here — never a new parser.
+PDF_MONTHS = [("SRC_JULY_PDF", "july_2026"), ("SRC_AUGUST_PDF", "august_2026")]
+```
+
+By **constant name**, not by path — the path still lives in exactly one place.
+Add the line, and nothing else: the parser is shared with the dashboard
+(`executive_dashboard/src/invoice_pdf.py`) and a new month never needs a new one.
+
+This was found the expensive way. A month registered in `config.py` and missing
+from `PDF_MONTHS` produces no error at all: the dashboard reads the new invoices,
+the analysis pipeline does not, every build stays green, and revenue, customer
+count and month count all silently keep last month's values.
+
+> **Gate — run it, do not reason about it.** Silent on a correct tree; on a tree
+> with the month registered once it names the constant.
+>
+> ```bash
+> python3 - <<'PY'
+> import importlib.util, re, pathlib
+> s = importlib.util.spec_from_file_location('cfg', 'executive_dashboard/src/config.py')
+> c = importlib.util.module_from_spec(s); s.loader.exec_module(c)
+> months = set(re.findall(r'\("(SRC_\w+)"',
+>     pathlib.Path('analysis/01_parse_invoices.py').read_text(encoding='utf-8')))
+> missing = [n for n in dir(c) if re.fullmatch(r'SRC_\w+_PDF', n) and n not in months]
+> print("NOT READ BY THE PIPELINE:", missing or "none")
+> PY
+> ```
+
+Everything else really does read `config.py` or the processed outputs. Collections,
+returns and balance files are registered once, in their lists, and no second edit.
 
 Then run the parsers (step 3 of SKILL.md) and let the reconciliations speak.
 A file registered with the wrong total aborts the build — which is the point.

@@ -12,6 +12,14 @@ source file  →  parser  →  data/processed/*.json + data.js  →  app section
 Registered in `executive_dashboard/src/config.py`; see `sources.md`. Each parser
 reconciles to the file's printed total and aborts otherwise.
 
+The one place this hop forks: a **PDF sales-invoice month** is read by two
+consumers. `executive_dashboard/build.py` picks it up from `config.py` alone,
+while the analysis pipeline reads only the months listed in
+`analysis/01_parse_invoices.py`'s `PDF_MONTHS` (by constant name — the path is
+still written once). Register in one and not the other and the two sides disagree
+with no error anywhere: the dashboard's invoice figures move, the app's do not.
+`sources.md` carries the gate that catches it.
+
 ## Hop 2 — parser → payloads
 
 Three payloads feed the offline app, and they are not interchangeable:
