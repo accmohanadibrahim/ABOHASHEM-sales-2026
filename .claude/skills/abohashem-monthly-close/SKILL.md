@@ -105,8 +105,29 @@ returns `AS_OF_DATE - NET_TERMS_DAYS`. A hand-written literal once sat there and
 went stale — it said `2026-07-31` against an as-of of `2026-09-03`, granting 34
 days of credit instead of the 30 the company gives.
 
-> **Gate:** `grep -rn "2026-0" --include=*.py executive_dashboard/src/` finds no
-> new hand-typed date beside the three constants above.
+> **Gate:** two checks, both cheap.
+>
+> ```bash
+> # 1. the cutoff is still derived, not drifting.
+> #    Load config.py BY PATH. Putting executive_dashboard/src on sys.path
+> #    shadows the standard library — src/collections.py wins over stdlib
+> #    `collections` and config.py then fails to import `re`.
+> python3 -c "
+> import importlib.util
+> s = importlib.util.spec_from_file_location('cfg', 'executive_dashboard/src/config.py')
+> c = importlib.util.module_from_spec(s); s.loader.exec_module(c)
+> print(c.AS_OF_DATE, c.NET_TERMS_DAYS, c.overdue_cutoff())"
+> # expected today: 2026-09-03 30 2026-08-04
+>
+> # 2. this round added no date literal outside config.py
+> git diff -U0 -- '*.py' ':!executive_dashboard/src/config.py' | grep -n '^+.*20[0-9][0-9]-[0-9][0-9]'
+> ```
+>
+> The second is scoped to **your own diff** on purpose. A blanket grep over the
+> tree returns long-standing hits and trains you to skip the gate — for example
+> `insights.py` falls back to a hard-coded `"2026-06"` focus month when the
+> requested one is absent. That one predates this skill; leave it unless the
+> owner asks, but do not add a second like it.
 
 ## 3. Read and reconcile
 
