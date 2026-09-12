@@ -21,6 +21,14 @@ OUT = ROOT / "data" / "processed" / "financial_analysis.json"
 
 
 def main():
+    """Compute the revenue-side financial block — and nothing that needs a cost.
+
+    Concentration, trailing-twelve-month run rate, DSO and the receivables
+    ageing all come from invoices and the AR snapshot. Gross margin, EBITDA and
+    inventory turnover are absent by design here: this step has no cost data, and
+    reporting them would mean inventing one. Profitability enters the pipeline
+    later, at 13_join_cost_margin.py, where a measured cost exists.
+    """
     df = pd.read_csv(TX, dtype={"customer_code": str})
     df["invoice_date_parsed"] = pd.to_datetime(df["invoice_date"], format="%Y/%m/%d")
     df["month"] = df["invoice_date_parsed"].dt.to_period("M").astype(str)

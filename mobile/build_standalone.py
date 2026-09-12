@@ -57,6 +57,7 @@ THEME = "#0a0e1a"
 
 
 def data_uri(name: str) -> str:
+    """An asset as a data: URI, so the bundle makes no network request."""
     return "data:image/png;base64," + b64(ASSETS / name)
 
 
@@ -100,10 +101,17 @@ def head_meta() -> str:
 
 
 def b64(path: Path) -> str:
+    """Base64 of a file's bytes, for inlining into the single-file build."""
     return base64.b64encode(path.read_bytes()).decode()
 
 
 def font_css() -> str:
+    """@font-face rules with Cairo inlined as base64.
+
+    The shipped build used to pull Cairo from fonts.googleapis.com, which broke
+    its own promise to work offline — on a phone with no signal the whole app
+    rendered in a fallback face. Inlined here instead.
+    """
     return "\n".join(
         f"@font-face{{font-family:'Cairo';font-style:normal;font-weight:{w};"
         f"font-display:swap;src:url(data:font/woff2;base64,{b64(FONT_DIR / f)}) "
@@ -117,6 +125,11 @@ def safe_js(txt: str) -> str:
 
 
 def read(p: Path) -> str:
+    """Read a required build input, naming it if it is missing.
+
+    Exits rather than returning empty: a silently absent module produces a
+    bundle that boots and is quietly missing a section.
+    """
     if not p.exists():
         raise SystemExit(f"missing input: {p.relative_to(ROOT)}")
     return p.read_text(encoding="utf-8")
@@ -133,6 +146,13 @@ def read_css(p: Path) -> str:
 
 
 def build() -> Path:
+    """Assemble the single-file app and write it to mobile/dist/.
+
+    Order is load-bearing — each module defines a namespace the next one uses —
+    and every payload is escaped before inlining, because a `</script>` inside
+    JSON data would otherwise end the script block early. The output must be
+    byte-identical across runs; ``verify.sh`` checks that with three builds.
+    """
     parts: list[str] = []
 
     # --- vendor ------------------------------------------------------------
@@ -171,6 +191,12 @@ def build() -> Path:
         shipped = json.loads(read(newest))
         if shipped != live:
             def _brief(d):
+                """One-line summary of a snapshot, for the mismatch error.
+
+                Printing the as-of date and the two headline balances is what
+                turns "the payload is wrong" into a message naming which
+                snapshot was picked up instead.
+                """
                 r = (d or {}).get("receivables", {})
                 return (f"as_of={(d or {}).get('meta', {}).get('as_of')} "
                         f"outstanding={r.get('total_outstanding')} "

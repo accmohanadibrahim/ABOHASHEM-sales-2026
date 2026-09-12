@@ -26,6 +26,12 @@ OUT_LOG = ROOT / "data" / "processed" / "customer_dim_log.json"
 
 
 def main():
+    """Build the customer dimension and left-join the AR snapshot onto it.
+
+    The join is deliberately left, not inner: the snapshot lists only customers
+    carrying a balance, so an inner join would silently delete every customer who
+    has paid in full along with their entire sales history.
+    """
     df = pd.read_csv(TX_CSV, dtype={"customer_code": str})
     ar = pd.read_csv(AR_CSV, dtype={"customer_code": str})
     ar["net_balance"] = ar["debit"] - ar["credit"]

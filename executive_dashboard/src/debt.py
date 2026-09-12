@@ -42,6 +42,13 @@ def _num(s):
 
 
 def _parse_pdf(path) -> list[tuple]:
+    """Recover the balance rows from one report by word coordinates.
+
+    Words are grouped into rows by their y position rather than read as a text
+    stream: these reports interleave columns in the text layer, so reading order
+    pairs a customer with another customer's balance. See `new-shape.md` in the
+    monthly-close skill for why every PDF parser here works this way.
+    """
     import fitz
     doc = fitz.open(path)
     rows_out = []

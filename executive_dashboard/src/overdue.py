@@ -74,6 +74,18 @@ def compute(invoices_full: pl.DataFrame, final_balances: dict,
             as_of_str: str = C.AS_OF_DATE,
             name_map: dict | None = None,
             rep_map: dict | None = None) -> dict:
+    """Age each customer's final balance across their invoices, oldest first.
+
+    FIFO against the SNAPSHOT balance, not against summed invoice remainders:
+    the printed «الباقي» on an invoice is frozen at print time and ignores every
+    later payment, and summing those across seventeen months once overstated the
+    debt by more than an order of magnitude. The snapshot is the only current
+    truth; the invoices only say how old it is.
+
+    Due date is company policy applied here — the invoices carry none — so the
+    ageing bands are as good as ``net_terms``, and that is stated wherever they
+    are shown.
+    """
     name_map = name_map or {}
     ext_rep = rep_map or {}
     as_of = date.fromisoformat(as_of_str)

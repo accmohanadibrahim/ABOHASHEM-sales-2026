@@ -22,6 +22,7 @@ pytestmark = pytest.mark.skipif(not DATA_JS.exists(),
 
 @pytest.fixture(scope="module")
 def dash():
+    """The built dashboard payload."""
     txt = DATA_JS.read_text(encoding="utf-8")
     return json.loads(txt[txt.index("{"):txt.rindex("}") + 1].replace("<\\/", "</"))
 
@@ -34,10 +35,17 @@ def test_collections_by_customer_has_a_total_order(dash):
 
 
 def test_customer_ar_keys_are_sorted(dash):
+    """Key order is sorted, not whatever set iteration produced.
+
+    Unsorted keys make the payload differ between runs that changed no data,
+    which destroys the byte-identical rebuild check and buries real changes in
+    reordering noise.
+    """
     codes = list(dash["customer_ar"].keys())
     assert codes == sorted(codes), "customer_ar key order depends on set iteration"
 
 
 def test_no_duplicate_customers_in_collections(dash):
+    """One row per customer — a duplicate double-counts their collections."""
     codes = [r["customer_code"] for r in dash["collections"]["by_customer"]]
     assert len(codes) == len(set(codes))

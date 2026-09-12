@@ -24,6 +24,7 @@ TOL = 0.01
 
 
 def _tool():
+    """Load kpi_snapshot.py by path, the way CI does before installing deps."""
     spec = importlib.util.spec_from_file_location("kpi_snapshot", TOOL)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -87,6 +88,11 @@ def test_the_expense_total_is_the_statements_own_total():
 
 
 def test_each_category_matches_the_payload():
+    """Each captured category equals the payload summed the same way.
+
+    The capture re-derives these totals rather than reading a stored field, so
+    this is what stops the snapshot and the screen drifting apart.
+    """
     if not DASH.exists():
         pytest.skip("margin_dashboard.json is not in this checkout")
     doc = json.loads(DASH.read_text(encoding="utf-8"))

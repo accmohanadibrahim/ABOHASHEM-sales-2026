@@ -49,6 +49,7 @@ def _margin():
 
 
 def _pct(x):
+    """A percentage for the report, or «—» when it was never measured."""
     return "—" if x is None else f"{x:.1f}%"
 
 
@@ -100,6 +101,13 @@ def _egp(x: float) -> str:
 
 
 def build(kpis, customers, products, receivables, insights, path=C.OUT_PDF):
+    """Render the Arabic executive PDF.
+
+    reportlab has no RTL engine, so every Arabic run is reshaped and bidi-ordered
+    before it is placed — see ``_ar`` for short runs and ``_ar_block`` for
+    anything that wraps. Mixing the two is what once produced a footer whose
+    lines were in reverse vertical order.
+    """
     pdfmetrics.registerFont(TTFont("Amiri", str(C.FONT_REGULAR)))
     pdfmetrics.registerFont(TTFont("Amiri-Bold", str(C.FONT_BOLD)))
 

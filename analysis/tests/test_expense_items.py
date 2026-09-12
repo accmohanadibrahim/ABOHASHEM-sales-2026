@@ -36,6 +36,7 @@ TOL = 1.0                                     # EGP
 
 
 def _rows():
+    """The monthly expense series, or skip when the extract is absent."""
     if not SRC.exists():
         pytest.skip("the vendored income statements are not in this checkout")
     _meta, rows = S.series()
@@ -43,6 +44,7 @@ def _rows():
 
 
 def _detail():
+    """Only the months that carry line items — the rest have totals alone."""
     return [r for r in _rows() if r["has_item_detail"]]
 
 
@@ -67,6 +69,13 @@ def test_every_measured_month_carries_line_items():
 
 
 def test_items_sum_to_the_group_total_the_statement_printed():
+    """The document's own group total is the check on the parse.
+
+    This is what makes reading these statements defensible: the items are not
+    trusted because the parser looks careful, but because each group prints a
+    total and the lines meet it. Lose this and a misread line becomes a figure
+    nobody can catch.
+    """
     for r in _detail():
         for group, total in (r["expenses"] or {}).items():
             got = sum(i["amount"] for i in r["expense_items"]
@@ -117,6 +126,12 @@ def test_a_month_with_no_statement_is_absent_not_zero():
 
 
 def test_total_only_months_say_so_rather_than_showing_zeroes():
+    """A month with no breakdown carries no items — and no zeroes.
+
+    Zero-valued items would render as real expense lines of zero, which is a
+    measurement claim nobody made. The total itself is measured and must
+    survive; only the detail is absent.
+    """
     for r in _rows():
         if not r["has_item_detail"]:
             assert r["expense_items"] == []
@@ -129,6 +144,11 @@ def test_total_only_months_say_so_rather_than_showing_zeroes():
 # ------------------------------------------------------------- the aliases ---
 
 def test_every_alias_has_a_canonical_name():
+    """Every alias maps a real group and actually renames something.
+
+    An alias whose raw and canonical spellings match is noise that hides a
+    typo: it looks like a deliberate mapping and does nothing.
+    """
     for (group, raw), canon in A.ALIASES.items():
         assert group in ("operating", "admin", "selling", "financing")
         assert raw and canon
@@ -187,6 +207,12 @@ def test_the_raw_label_always_travels_with_the_row():
 # --------------------------------------------------------- what ships ------
 
 def test_the_app_payload_carries_the_expense_block():
+    """The section's data reaches the app, not just the processed files.
+
+    The pipeline can produce a correct expenses block and still ship an app
+    without it — one missing key between them, and the section silently
+    disappears from the phone while every test on the analysis side passes.
+    """
     if not DASH.exists():
         pytest.skip("margin_dashboard.json is not in this checkout")
     d = json.loads(DASH.read_text(encoding="utf-8"))
@@ -233,6 +259,7 @@ def _statements():
 
 
 def _four_way():
+    """Only the statements that declare all four categories themselves."""
     return [b for b in _statements() if b["four_way"]]
 
 
@@ -260,6 +287,11 @@ def test_the_four_categories_add_up_to_total_expenses():
 
 
 def test_every_item_has_a_category_and_says_how_it_got_one():
+    """No line is categorised without recording the basis for it.
+
+    A category with no basis cannot be told apart from a measured one, which is
+    exactly the confusion the four-value vocabulary exists to prevent.
+    """
     bases = {"stated", "mapped", "unsplit", "as_filed"}
     for b in _statements():
         for it in b["expense_items"]:

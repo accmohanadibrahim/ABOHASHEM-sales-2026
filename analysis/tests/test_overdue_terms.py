@@ -28,6 +28,7 @@ from src import config as C  # noqa: E402
 
 
 def _overdue_mod():
+    """Import the overdue module, skipped when polars is absent (as in CI)."""
     pytest.importorskip("polars")
     from src import overdue as overdue_mod
     return overdue_mod
@@ -49,6 +50,11 @@ def test_cutoff_follows_a_different_as_of():
 
 
 def test_due_date_is_invoice_date_plus_the_terms():
+    """Due date is plain date arithmetic, including across month ends.
+
+    The second case crosses February: adding 30 days to 31 January lands in
+    March, which any month-based shortcut gets wrong.
+    """
     assert C.due_date(date(2026, 8, 3)) == date(2026, 9, 2)
     assert C.due_date(date(2026, 1, 31)) == date(2026, 3, 2)      # crosses months
 
@@ -86,6 +92,11 @@ def test_bands_come_from_config_not_a_second_ladder():
     (5000, "d120p"),
 ])
 def test_bucket_is_chosen_by_days_past_due(days_past_due, bucket):
+    """Bands are cut on days PAST DUE, not on invoice age.
+
+    Measuring from the invoice date shifts every band by the terms and makes
+    the first one unreachable — see the test below.
+    """
     assert _overdue_mod()._bucket_for_days_past_due(days_past_due) == bucket
 
 

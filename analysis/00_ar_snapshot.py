@@ -41,6 +41,12 @@ FIELDS = ["rep", "customer_code", "customer_name", "city", "phone",
 
 
 def main():
+    """Write data/processed/ar_customer_balances_current.csv from the PDFs.
+
+    Refuses to run at all when none of the reports in ``config.AR_SNAPSHOT_FILES``
+    exist: writing an empty snapshot over the one six later steps read would
+    replace every customer balance with silence and still exit zero.
+    """
     present = [(p, rep) for p, rep in C.AR_SNAPSHOT_FILES if p.exists()]
     if not present:
         raise SystemExit(

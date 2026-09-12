@@ -30,12 +30,19 @@ fails: list[str] = []
 
 
 def check(name: str, ok: bool, detail: str = "") -> None:
+    """Record one assertion and print it; failures are collected, not raised."""
     print(f"  {'PASS' if ok else 'FAIL'}  {name}{('  — ' + detail) if detail else ''}")
     if not ok:
         fails.append(name)
 
 
 def run(path: Path) -> int:
+    """Drive the real export buttons and open what they produce; 0 if clean.
+
+    The XLSX writer is hand-rolled — a ZIP container plus OOXML parts, no
+    library — so the workbook is proved by opening it with openpyxl rather than
+    assumed from the code. Same for the CSV, the SVG and the PNG.
+    """
     with sync_playwright() as pw:
         # Same fallback as smoke_test.py: the pinned path is this image's
         # Chromium, and hard-coding it fails a machine that has its own.

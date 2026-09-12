@@ -278,6 +278,13 @@ def parse_pdf_months():
 
 
 def main():
+    """Parse every invoice source into one line-item CSV, and log what did not parse.
+
+    Writes ``sales_transactions.csv`` plus ``parse_log.json``. The log is not
+    decoration: invoices whose line items do not reconcile to the printed total
+    are counted there rather than dropped quietly, so a source that starts
+    arriving in a new layout shows up as a number instead of as missing revenue.
+    """
     rows = parse_main_file() + parse_june_file() + parse_pdf_months()
     log["line_items_total"] = len(rows)
 

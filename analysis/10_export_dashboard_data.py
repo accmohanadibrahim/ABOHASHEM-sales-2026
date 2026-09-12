@@ -34,6 +34,13 @@ def clean(obj):
 
 
 def main():
+    """Bundle every processed output into dashboards/data.js as one JS assignment.
+
+    Embedded rather than fetched because the dashboards are opened straight from
+    disk: a ``file://`` page cannot fetch its own JSON without tripping CORS, so
+    a data file that works over HTTP would silently render an empty dashboard for
+    the person who double-clicks the HTML.
+    """
     data = {}
     data["parse_log"] = rd_json("parse_log.json")
     data["dimension_log"] = rd_json("dimension_log.json")

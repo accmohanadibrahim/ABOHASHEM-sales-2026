@@ -48,6 +48,13 @@ def build_series(df, group_col, group_val, months):
 
 
 def main():
+    """Forecast each brand, top customer and top item with Holt's linear trend.
+
+    One model class for every series rather than a per-series grid search: at
+    this granularity the extra fit does not change a decision, and searching per
+    series would let a handful of short noisy series pick exotic models.
+    Each series' own residual standard deviation sets its interval width.
+    """
     df = pd.read_csv(TX, dtype={"customer_code": str})
     df["invoice_date_parsed"] = pd.to_datetime(df["invoice_date"], format="%Y/%m/%d")
     df["month"] = df["invoice_date_parsed"].dt.to_period("M").astype(str)

@@ -134,6 +134,11 @@ def test_debt_aliases_reage_onto_invoice_codes():
 
 # --- collections / returns parsing (needs polars + pymupdf + source PDFs) -----
 def _collections_module():
+    """Import the collections parser, skipping when deps or sources are absent.
+
+    Needs polars, fitz and the actual source PDFs; CI has none of them, and a
+    failure there would report a broken pipeline instead of a thin image.
+    """
     pytest.importorskip("polars")
     pytest.importorskip("fitz")
     from src import collections as coll

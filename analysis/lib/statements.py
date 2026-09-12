@@ -28,6 +28,13 @@ except ImportError:
     import importlib.util as _il
 
     def _sibling(name):
+        """Load a sibling module by path, for when the package import fails.
+
+        These modules are also loaded file-by-path by tests that exercise a
+        checkout without the package on sys.path. The relative import above is
+        the normal route; this is the fallback that keeps such a load working
+        instead of failing on a dotted name that does not resolve.
+        """
         spec = _il.spec_from_file_location(
             "_" + name, Path(__file__).resolve().parent / (name + ".py"))
         mod = _il.module_from_spec(spec)
@@ -67,10 +74,21 @@ def set_caller(name):
 
 
 def die(msg):
+    """Stop the build with a named reason.
+
+    Exits rather than raising: every caller is a pipeline step, and a partly
+    written payload is worse than no payload.
+    """
     sys.exit(f"{_WHO}: {msg}")
 
 
 def close(a, b, tol=TOL):
+    """Equal to within the reconciliation tolerance.
+
+    Money arrives rounded to piastres and floats do not add exactly, so an
+    identity that holds in the document can still fail ``==``. TOL is what
+    separates "the statement disagrees" from "the last bit disagrees".
+    """
     return abs(a - b) <= tol
 
 
@@ -80,12 +98,23 @@ def r2(x):
 
 
 def pct(num, den):
+    """A percentage, or None when the denominator is zero.
+
+    None rather than 0.0: a month with no sales has no margin, and rendering
+    0% would state a measurement nobody made.
+    """
     return None if not den else round(num / den * 100.0, 4)
 
 
 # ------------------------------------------------------------------ inputs --
 
 def load_statements():
+    """Read the vendored extract, or say exactly how to regenerate it.
+
+    The extract is produced by hand from the costing repo, so a checkout can
+    legitimately not have it. The error names the command rather than reporting
+    a missing file, because the fix is never "create this file".
+    """
     if not SRC.exists():
         die(f"{SRC.relative_to(ROOT)} is missing. Run "
             f"analysis/tools/extract_income_statements.py --repo <costing repo>")
@@ -303,6 +332,12 @@ def monthly_series(obs, weights):
 
 
 def totals(rows):
+    """Sum the monthly series into the company totals the app shows.
+
+    Margins are recomputed from the summed amounts rather than averaged across
+    months — averaging percentages would weight a small month the same as a
+    large one and produce a figure no statement contains.
+    """
     net = sum(r["net_sales"] for r in rows)
     cogs = sum(r["cogs"] for r in rows)
     gross = sum(r["gross_profit"] for r in rows)

@@ -98,6 +98,12 @@ def hierarchy_tree(df):
 
 
 def main():
+    """Run the descriptive pass and write its CSV and JSON outputs.
+
+    Descriptive statistics, the monthly series, Pareto and ABC/XYZ classes per
+    customer, item and brand, and the growth rates the dashboards read. Nothing
+    here is modelled — 07_forecasting.py does that from these outputs.
+    """
     df = load()
 
     # 1. descriptive stats

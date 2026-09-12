@@ -30,6 +30,12 @@ _BANDS = [("total", 0, 70), ("pct", 70, 135), ("price", 135, 200), ("qty", 200, 
 
 
 def _band(x: float):
+    """Which column an x coordinate falls in, or None outside the table.
+
+    The bands are this template's fixed geometry. Reading a field by its band
+    rather than by its position in the text stream is what keeps a wrapped item
+    name from shifting every value on its row.
+    """
     for n, lo, hi in _BANDS:
         if lo <= x < hi:
             return n
@@ -37,6 +43,7 @@ def _band(x: float):
 
 
 def _num(s):
+    """A float from a printed figure, or None — never 0 for unparseable text."""
     try:
         return float(str(s).replace(",", ""))
     except (ValueError, TypeError):
@@ -44,6 +51,7 @@ def _num(s):
 
 
 def _to_date(s: str) -> date:
+    """Parse the template's YYYY/M/D invoice date."""
     y, m, d = (int(x) for x in s.split("/"))
     return date(y, m, d)
 
@@ -58,7 +66,15 @@ _RE_DATE_ANCHORED = r"الكود\s*(\d{4}/\d{1,2}/\d{1,2})"
 
 
 def _header_footer(text: str) -> dict:
+    """Pull the invoice's header and footer fields by their printed labels.
+
+    Label-anchored, not positional. The date anchor especially: page 1 of every
+    file also carries the report's period header, whose dates come FIRST in the
+    text layer, so an unanchored search dates the first invoice to the start of
+    the period — which coincided in July and was 29 days wrong in August.
+    """
     def g(rx):
+        """First capture group of `rx` in the page text, or None."""
         m = re.search(rx, text)
         return m.group(1) if m else None
     return dict(
@@ -76,6 +92,13 @@ def _header_footer(text: str) -> dict:
 
 
 def _items(page) -> list[dict]:
+    """Recover the line items between the header and total rows.
+
+    Words are clustered into rows by vertical gaps so a two-line wrapped item
+    name stays one item, then each word is placed by its column band. Returns
+    an empty list rather than raising when the region holds nothing — the
+    caller reconciles Σ items against the printed total and reports the failure.
+    """
     words = page.get_text("words")               # (x0, y0, x1, y1, word, ...)
     ys_hdr = [w[1] for w in words if w[4] == "الضريبة"]
     ys_ft = [w[1] for w in words if "الفاتورة" in w[4] or w[4] == "إجمالى"]

@@ -23,6 +23,11 @@ sys.path.insert(0, str(ROOT / "executive_dashboard"))
 
 @pytest.fixture(scope="module")
 def rows():
+    """The generated AR snapshot, or skip when it has not been built.
+
+    Skip rather than fail: a fresh checkout has no processed outputs, and a red
+    suite there would say "broken" about a repo that is merely unbuilt.
+    """
     if not CSV_PATH.exists():
         pytest.skip("AR snapshot not generated (run analysis/00_ar_snapshot.py)")
     with open(CSV_PATH, encoding="utf-8") as fh:
@@ -31,6 +36,7 @@ def rows():
 
 @pytest.fixture(scope="module")
 def cfg():
+    """The dashboard config, skipped when polars is absent (as in CI)."""
     pytest.importorskip("polars")
     from src import config as C
     return C

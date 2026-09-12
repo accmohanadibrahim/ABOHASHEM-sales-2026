@@ -16,12 +16,18 @@ SPEC.loader.exec_module(builder)
 
 
 def _manifest_from_head(head):
+    """Decode the inline base64 web-app manifest out of the head markup."""
     marker = 'rel="manifest" href="data:application/manifest+json;base64,'
     encoded = head.split(marker, 1)[1].split('"', 1)[0]
     return json.loads(base64.b64decode(encoded).decode("utf-8"))
 
 
 def test_head_metadata_contains_installable_offline_manifest():
+    """The manifest is present, inline, Arabic and RTL.
+
+    Inline because a manifest fetched from a URL defeats the point: the bundle
+    is opened from a phone's filesystem with no server and often no network.
+    """
     head = builder.head_meta()
     manifest = _manifest_from_head(head)
 
@@ -40,6 +46,12 @@ def test_head_metadata_contains_installable_offline_manifest():
 
 
 def test_inline_guards_escape_scripts_and_reject_style_terminators(tmp_path):
+    """A closing script tag inside inlined data cannot end the script block.
+
+    Everything is inlined into one HTML file, so a `</script>` occurring inside
+    a JSON payload would terminate the block early and leave the rest of the
+    app as visible text on the page.
+    """
     assert builder.safe_js("before</script>after") == "before<\\/script>after"
     assert builder.safe_js("ordinary data") == "ordinary data"
 
@@ -54,12 +66,23 @@ def test_inline_guards_escape_scripts_and_reject_style_terminators(tmp_path):
 
 
 def test_read_reports_missing_repository_input():
+    """A missing input names itself instead of building something incomplete.
+
+    Silently skipping an absent module produces a bundle that boots and is
+    quietly missing a section — the worst possible failure for this build.
+    """
     missing = ROOT / "mobile" / "definitely-missing-test-input.js"
     with pytest.raises(SystemExit, match=r"missing input: mobile/definitely-missing"):
         builder.read(missing)
 
 
 def test_build_inlines_inputs_in_runtime_order_and_escapes_payloads(tmp_path, monkeypatch):
+    """Modules are inlined in dependency order, with payloads escaped.
+
+    Order is load-bearing: each module defines a namespace the next one uses,
+    so a reordering produces a bundle that throws on boot rather than one that
+    merely looks wrong.
+    """
     app = tmp_path / "mobile"
     src = app / "src"
     snaps = app / "data" / "snapshots"

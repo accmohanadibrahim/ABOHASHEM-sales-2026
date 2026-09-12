@@ -240,6 +240,12 @@ def _bundle(lines_all, invoices_all, dims, receivables_full, monthly, month, col
 
 
 def main() -> int:
+    """Build every dashboard artefact, and exit non-zero if validation fails.
+
+    Parses the full invoice history but renders only the period year: the older
+    years are still needed, because FIFO overdue allocation has to see every
+    invoice a customer was ever billed for, not just this year's.
+    """
     print("● Loading + parsing all sources (full history) …")
     dims = load.load_dimensions()
     lines_raw_full, invoices_full = load.parse_all()          # 2025-01 .. 2026-07 (all years)
@@ -380,6 +386,12 @@ def main() -> int:
 
 
 def render_index():
+    """Copy the page template to the output, if a template exists.
+
+    Absent template is not an error: the built index is committed, and a
+    checkout without the template should leave it as it stands rather than
+    truncate the dashboard to nothing.
+    """
     tpl = (C.APP_DIR / "index.template.html")
     if tpl.exists():
         C.OUT_INDEX.write_text(tpl.read_text(encoding="utf-8"), encoding="utf-8")
@@ -387,6 +399,12 @@ def render_index():
 
 def validate(lines_all, invoices_all, jl, ji, june, receivables, dq, months,
              collections=None, billed2026_total=None, bundles_by_month=None) -> bool:
+    """Run every hard check and print the report; False if any failed.
+
+    The caller exits non-zero on False, so a build that does not reconcile never
+    reaches the app. Prints all checks rather than stopping at the first — one
+    broken input usually trips several, and the set says which is the cause.
+    """
     print("\n" + "=" * 64)
     print("VALIDATION REPORT")
     print("=" * 64)

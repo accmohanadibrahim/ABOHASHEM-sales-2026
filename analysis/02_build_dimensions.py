@@ -114,6 +114,12 @@ def normalize(s: str) -> str:
 
 
 def main():
+    """Build the item dimension and attach brand and carton size to every line.
+
+    An item code carrying no usable name in any source keeps the honest
+    «صنف <code>» placeholder and is listed in the log — never an invented name,
+    and never dropped along with its revenue.
+    """
     df = pd.read_csv(TX_CSV)
     log = {"matched_master": 0, "matched_keyword": 0, "unclassified": [], "n_items": 0}
 

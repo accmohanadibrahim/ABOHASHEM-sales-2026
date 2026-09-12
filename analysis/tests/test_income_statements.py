@@ -40,16 +40,19 @@ JUNE = {"net_sales": 3_741_772.00, "cogs": 2_039_933.08,
 
 @pytest.fixture(scope="module")
 def out():
+    """The generated monthly series payload."""
     return json.loads(OUT.read_text(encoding="utf-8"))
 
 
 @pytest.fixture(scope="module")
 def src():
+    """The vendored extract the series is derived from."""
     return json.loads(SRC.read_text(encoding="utf-8"))
 
 
 @pytest.fixture(scope="module")
 def months(out):
+    """The per-month rows of the generated series."""
     return out["by_month"]
 
 
@@ -95,6 +98,13 @@ def test_june_ties_to_the_costing_model(src):
 
 
 def test_thirteen_months_from_eleven_observations(src, out):
+    """Eleven documents cover thirteen months, and none is lost or doubled.
+
+    One of the eleven is a quarterly statement covering three months. The
+    arithmetic here is the guard against the two ways that goes wrong: counting
+    the quarter once and losing two months, or expanding it and counting its
+    figures three times.
+    """
     assert len(src["observations"]) == 11
     assert sum(o["months"] for o in src["observations"]) == 13
     assert out["totals"]["months"] == 13
@@ -153,12 +163,23 @@ def test_allocation_carries_no_within_quarter_margin_signal(months):
 
 
 def test_weights_are_a_partition(months):
+    """The quarter's allocation splits it exactly once — no more, no less.
+
+    Weights summing to anything but 1.0 would quietly scale a real quarter's
+    figures up or down, and a weight of 0 or 1 would mean a month got nothing
+    or the whole quarter.
+    """
     parts = [r for r in months if r["source_period"] == QUARTER]
     assert abs(sum(r["allocation_weight"] for r in parts) - 1.0) <= 1e-5
     assert all(0 < r["allocation_weight"] < 1 for r in parts)
 
 
 def test_totals_match_the_series(out, months):
+    """The published totals are the series summed, not a separate figure.
+
+    Two paths to the same number is how a report ends up disagreeing with its
+    own table. Margins are recomputed from the summed amounts, never averaged.
+    """
     t = out["totals"]
     for f in ("net_sales", "cogs", "gross_profit", "net_profit"):
         assert abs(sum(r[f] for r in months) - t[f]) <= CENT, f

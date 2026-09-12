@@ -145,6 +145,13 @@ def summarize_cv(errors):
 
 
 def main():
+    """Compare the honestly-estimable model classes and write the 7-month forecast.
+
+    Selection is by rolling-origin cross-validated RMSE, not in-sample fit: with
+    only eighteen monthly observations an in-sample criterion rewards the model
+    that memorises the series. AIC/BIC are recorded alongside for reference and
+    are not what picks the winner.
+    """
     m = pd.read_csv(M_CSV)
     y = m["revenue"].values
     months = m["month"].tolist()

@@ -45,6 +45,12 @@ def dict_to_df(d, key_label="المؤشر", val_label="القيمة"):
 
 
 def main():
+    """Write every analysis output into one styled multi-sheet workbook.
+
+    For the Board, investor and bank readers who work in Excel rather than in
+    CSV or JSON. Reads only the processed outputs, so the workbook cannot
+    disagree with the dashboards — both are views of the same files.
+    """
     with pd.ExcelWriter(OUT, engine="openpyxl") as writer:
         # 1. Executive summary
         eda = json.load(open(P / "eda_summary.json", encoding="utf-8"))

@@ -122,10 +122,17 @@ class ExtractError(SystemExit):
 
 
 def die(msg: str) -> None:
+    """Abort the extraction with a named reason.
+
+    Raises rather than exiting: the caller ships the month with its totals and
+    no line detail when extraction fails, which is a real fallback rather than
+    a crash.
+    """
     raise ExtractError(f"extract_income_statements: {msg}")
 
 
 def close(a: float, b: float, tol: float = TOL) -> bool:
+    """Equal to within the reconciliation tolerance — see TOL."""
     return abs(a - b) <= tol
 
 
@@ -142,6 +149,11 @@ def git_show(repo: Path, ref: str, path: str) -> bytes:
 
 
 def git_rev(repo: Path, ref: str) -> str:
+    """Resolve a ref to a commit sha, so the extract records its source.
+
+    The sha travels into the payload and into PROVENANCE.md: an extract that
+    cannot say which commit it came from cannot be re-derived or audited.
+    """
     p = subprocess.run(["git", "-C", str(repo), "rev-parse", ref],
                        capture_output=True, text=True)
     if p.returncode != 0:
@@ -152,10 +164,17 @@ def git_rev(repo: Path, ref: str) -> str:
 # ------------------------------------------------------------------- xlsx ----
 
 def _num(v):
+    """The cell's value if it is a real number, else None.
+
+    Excludes bool on purpose — openpyxl returns True for some cells and
+    ``isinstance(True, int)`` is true, so a checkbox would otherwise read as
+    the figure 1.
+    """
     return v if isinstance(v, (int, float)) and not isinstance(v, bool) else None
 
 
 def _label_at(ws, row, col):
+    """The cell's text, stripped; empty string for anything not text."""
     v = ws.cell(row=row, column=col).value
     return v.strip() if isinstance(v, str) else ""
 
@@ -377,6 +396,15 @@ def parse_sheet(ws, period, source, ws_frm=None):
 
 
 def parse_workbook(repo, ref):
+    """Read the 2025 statements out of the costing workbook.
+
+    Opens the same bytes twice: once evaluated for the figures, once keeping
+    formulas. The second read is not redundant — the group totals declare their
+    own item membership through their SUM ranges, and that declaration exists
+    only in the un-evaluated workbook. Taking the group boundary from the
+    accountant's own formula is what makes the item split a fact rather than a
+    guess about layout.
+    """
     import openpyxl
     raw = git_show(repo, ref, XLSX_SOURCE)
     wb = openpyxl.load_workbook(io.BytesIO(raw), data_only=True)
@@ -719,6 +747,15 @@ def pdf_expense_items(doc, period, net_sales, total_expenses):
     return groups, items, outside
 
 def parse_pdf(repo, ref, path, period, months):
+    """Read one 2026 statement PDF into an observation.
+
+    The four headline figures come from the flat text, where they are reliably
+    label-adjacent. The expense items do NOT: they are read as positioned words
+    by ``pdf_expense_items`` and must clear three independent reconciliations
+    before they are kept. A month that fails any of them ships with its totals
+    and no items — the same output as before this parser existed, reached by
+    measurement rather than by policy.
+    """
     import pymupdf
     raw = git_show(repo, ref, path)
     doc = pymupdf.open(stream=raw, filetype="pdf")
@@ -794,6 +831,12 @@ def validate(obs):
 # -------------------------------------------------------------------- main ----
 
 def main(argv=None):
+    """Extract every statement into data/cost/income_statements.json.
+
+    Run by hand against a clone of the costing repo, not from the pipeline —
+    the binary sources stay there and only the parsed, reviewable JSON is
+    committed here. Writes nothing unless every statement validates.
+    """
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--repo", required=True, type=Path,
                     help="path to a clone of hannopo1/Abohashem")

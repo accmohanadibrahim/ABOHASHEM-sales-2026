@@ -70,11 +70,24 @@ die = S.die
 
 
 def write_json(path, payload):
+    """Write a payload as UTF-8 JSON, sorted and newline-terminated.
+
+    ``sort_keys`` and the trailing newline are what make the build
+    reproducible: without them a rebuild that changed nothing still produces a
+    different file, and the determinism check can no longer tell a real data
+    change from dictionary ordering.
+    """
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2,
                                sort_keys=True) + "\n", encoding="utf-8")
 
 
 def write_csv(path, rows):
+    """Write the monthly series as CSV with a fixed column order.
+
+    ``extrasaction="ignore"`` is deliberate: rows carry more fields than the
+    CSV publishes, and the column list here is the contract. A new field added
+    upstream must be added here on purpose to appear.
+    """
     cols = ["period", "basis", "estimated", "source_period", "net_sales",
             "cogs", "gross_profit", "gross_margin_pct", "total_expenses",
             "net_profit", "net_margin_pct"]
@@ -176,6 +189,14 @@ def expense_block(rows, obs, weights):
 
 
 def main():
+    """Absorb the income statements into the monthly series and the payloads.
+
+    Loads and re-validates the vendored statements, allocates the quarterly one
+    across its months by invoice revenue, then writes the series and attaches
+    it to the margin payload. Skips — rather than fails — when the vendored
+    extract is absent, so a checkout from before the statements arrived still
+    builds exactly as it did then.
+    """
     meta, obs = S.load_statements()
     S.revalidate(obs)
     weights = S.invoice_revenue_by_month()

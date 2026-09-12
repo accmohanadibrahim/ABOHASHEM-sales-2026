@@ -259,6 +259,16 @@ def reconcile(cost_rows: dict, tx: pd.DataFrame) -> dict:
 
 # ------------------------------------------------------------------ the join
 def build(tx: pd.DataFrame, u: pd.DataFrame, pidx: pd.DataFrame) -> pd.DataFrame:
+    """Join unit costs onto every sales line and mark each row's basis.
+
+    Two things here are load-bearing and easy to undo by accident. Cost columns
+    are NaN — never 0 — where the item has no cost row, so an uncosted item
+    cannot masquerade as a free one and quietly inflate margin. And the measured
+    month uses revenue NET of returns while the other months do not, because
+    that is the only basis on which the costing model reconciles to the June
+    income statement; taking the measured month against gross revenue is the
+    bug that once showed 47.25% for a month whose own statement says 45.48%.
+    """
     j = tx.merge(u, on="item_code", how="left").merge(pidx, on="month", how="left")
     j["is_costed"] = j["mat_unit"].notna()
     for col, unit in [("cogs", "mat_unit"), ("conv_cost", "conv_unit"),
@@ -500,6 +510,12 @@ def dashboard_payload(summary: dict, outs: dict, u: pd.DataFrame,
     dashboard's data contract and nothing here should perturb it.
     """
     def rows(df, cols, n=None):
+        """Round, slice and JSON-clean a frame for the dashboard payload.
+
+        ``clean`` is what turns NaN into null rather than the string "NaN",
+        which is the difference between the app showing an honest blank and
+        showing a value that reads as text.
+        """
         d = df if n is None else df.head(n)
         return clean(d[cols].round(4).to_dict("records"))
 
@@ -557,6 +573,14 @@ def dashboard_payload(summary: dict, outs: dict, u: pd.DataFrame,
 
 
 def main() -> None:
+    """Build the profitability payloads, or abort before writing anything.
+
+    Reads the parsed invoices and the vendored cost model, reconciles them,
+    then writes ``margin_summary.json`` and ``margin_dashboard.json``. Every
+    reconciliation raises rather than warning: a margin that silently disagrees
+    with the income statement reaches a board report looking exactly like one
+    that agrees.
+    """
     tx = pd.read_csv(P / "sales_transactions.csv",
                      dtype={"customer_code": str, "item_code": str})
     tx["item_code"] = tx["item_code"].str.strip()
@@ -643,6 +667,13 @@ def main() -> None:
                       ["line_total"].sum().sort_values(ascending=False))
 
     def block(d: pd.DataFrame) -> dict:
+        """Summarise one slice of rows into the basis block the app shows.
+
+        Percentages are taken against ``net_revenue`` — the same figure
+        ``agg()`` uses — so a margin quoted here cannot drift from the one
+        quoted beside it. Returns None for a percentage when revenue is zero
+        instead of raising or reporting 0%.
+        """
         # net_revenue, matching agg(): the measured month is net of returns and
         # its margin percentages have to be taken against that same figure.
         rev = float(d["net_revenue"].sum())

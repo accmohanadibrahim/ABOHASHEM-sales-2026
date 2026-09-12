@@ -42,6 +42,7 @@ def one(blocks, pred, what: str):
 
 
 def check(name: str, ok: bool, detail: str = "") -> None:
+    """Record one assertion and print it; failures are collected, not raised."""
     print(f"  {'PASS' if ok else 'FAIL'}  {name}{('  — ' + detail) if detail else ''}")
     if not ok:
         fails.append(name)
@@ -58,12 +59,20 @@ def scripts(html: str) -> list[tuple[str, str]]:
 
 
 def js_payload(body: str, var: str):
+    """Parse a `window.X = {...};` assignment out of an inline script."""
     s = body.replace("<\\/", "</")
     i = s.index("{", s.index(var))
     return json.loads(s[i:s.rindex("}") + 1])
 
 
 def main(shipped_path: str) -> int:
+    """Compare the rebuilt bundle with the shipped original, axis by axis.
+
+    Data payloads and vendor bytes must match exactly — always. The runtime-code
+    comparison was the acceptance gate for extracting the modules out of the
+    generated file; now that the app has grown features it reports drift and
+    lists what changed, and only fails under --strict.
+    """
     shipped = Path(shipped_path).read_text(encoding="utf-8")
     built = BUILT.read_text(encoding="utf-8")
     sb, bb = scripts(shipped), scripts(built)
@@ -81,6 +90,7 @@ def main(shipped_path: str) -> int:
                   "app runtime")
 
     def code_lines(txt):
+        """Strip comments and blank lines, so formatting is not compared."""
         out, in_block = [], False
         for raw in txt.split("\n"):
             t = raw.strip()
@@ -136,6 +146,7 @@ def main(shipped_path: str) -> int:
 
     # 3. snapshots ------------------------------------------------------------
     def snaps(pairs):
+        """The snapshot payloads keyed by their script id."""
         return {i: json.loads(b.replace("<\\/", "</"))
                 for i, b in pairs if i and i.startswith("snap-dash")}
     sa, sbn = snaps(sb), snaps(bb)

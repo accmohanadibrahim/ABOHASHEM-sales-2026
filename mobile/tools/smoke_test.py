@@ -42,6 +42,12 @@ MIN_CHARS = 300          # below this a section is effectively blank
 
 
 def run(path: Path) -> int:
+    """Boot the bundle in Chromium and walk every section; 0 if clean.
+
+    Loads over file:// exactly as a phone would, so a build that only works from
+    a web server fails here. A section that vanishes from the registry, renders
+    empty, or throws is a failure — as is any JS error at all.
+    """
     errors: list[str] = []
     problems: list[str] = []
     result: dict = {"file": path.name, "size_mb": round(path.stat().st_size / 1e6, 1)}

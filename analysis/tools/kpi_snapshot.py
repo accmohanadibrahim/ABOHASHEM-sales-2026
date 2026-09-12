@@ -88,6 +88,11 @@ EXPENSE_CATEGORIES = {
 
 
 def dig(obj, path: str):
+    """Follow a dotted path into nested JSON, returning None if it breaks.
+
+    None rather than raising anywhere along the way: a metric whose input moved
+    is reported as missing, and the other thirty-nine still get compared.
+    """
     for part in path.split("."):
         if obj is None:
             return None
@@ -102,6 +107,11 @@ def dig(obj, path: str):
 
 
 def load_json(path: Path):
+    """Read a JSON file, or None if it is absent or unreadable.
+
+    A capture taken before the pipeline has ever run is a normal case, not an
+    error — see the module docstring.
+    """
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -144,6 +154,12 @@ def expense_metrics(doc) -> dict:
 
 
 def capture() -> dict:
+    """Read every headline figure the app publishes into one snapshot.
+
+    Three sources: the processed JSON outputs, the derived expense totals, and
+    the dashboard payload. Each metric carries its own ``kind`` so the diff can
+    format and compare it without guessing what it is.
+    """
     out, cache = {}, {}
     for label, (path, dotted, kind) in METRICS.items():
         if path not in cache:
@@ -160,6 +176,7 @@ def capture() -> dict:
 
 
 def fmt(value, kind: str) -> str:
+    """Render one value for the Markdown table; «—» when it is missing."""
     if value is None:
         return "—"
     if kind == "egp":
@@ -170,6 +187,12 @@ def fmt(value, kind: str) -> str:
 
 
 def delta(before, after, kind: str) -> str:
+    """Describe the change between two captures, in Arabic, for the table.
+
+    Distinguishes four cases a bare subtraction cannot: unchanged, newly
+    present, disappeared, and changed. "Disappeared" matters most — a metric
+    that stops being produced is a regression that looks like silence.
+    """
     if before is None and after is None:
         return "—"
     if before is None:
@@ -192,6 +215,11 @@ def delta(before, after, kind: str) -> str:
 
 
 def diff(a: dict, b: dict) -> str:
+    """Render the before/after table the rebuild PR carries.
+
+    Iterates the AFTER capture, so a metric added since the before-snapshot
+    appears as new rather than being dropped from the comparison.
+    """
     lines = ["### أثر البيانات الجديدة على الأرقام", "",
              "| المؤشر | قبل | بعد | الفرق |", "|---|---:|---:|---:|"]
     changed = 0
@@ -210,6 +238,7 @@ def diff(a: dict, b: dict) -> str:
 
 
 def main(argv: list[str]) -> int:
+    """capture <path> | diff <before> <after> — see the module docstring."""
     if len(argv) == 3 and argv[1] == "capture":
         Path(argv[2]).write_text(
             json.dumps(capture(), ensure_ascii=False, indent=2), encoding="utf-8")

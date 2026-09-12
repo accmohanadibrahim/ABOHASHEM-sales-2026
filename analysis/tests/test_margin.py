@@ -32,11 +32,13 @@ PCT_TOL = 0.01     # percentage points
 
 @pytest.fixture(scope="module")
 def summary():
+    """The margin summary payload."""
     return json.loads(SUMMARY.read_text(encoding="utf-8"))
 
 
 @pytest.fixture(scope="module")
 def dash():
+    """The margin dashboard payload the app reads."""
     return json.loads(DASHBOARD.read_text(encoding="utf-8"))
 
 
@@ -49,6 +51,11 @@ def test_reconciliation_recorded_as_passing(summary):
 
 
 def test_measured_is_exactly_the_cost_month(summary):
+    """The measured basis covers the cost month and nothing else.
+
+    One month has an observed unit cost. A second month appearing here would
+    mean an estimate had been relabelled as a measurement.
+    """
     assert summary["measured"]["months"] == [summary["cost_month"]]
 
 
@@ -67,6 +74,11 @@ def test_headline_indicative_excludes_unreliable_months(summary):
 
 
 def test_drift_gate_partitions_every_month(summary, dash):
+    """Every month is either reliable or excluded — never both, never neither.
+
+    A month in neither set is a month the gate never judged, and it would carry
+    an indicative margin with no statement about whether it can be trusted.
+    """
     reliable = set(summary["price_drift"]["reliable_months"])
     excluded = set(summary["price_drift"]["excluded_months"])
     assert not reliable & excluded
@@ -75,6 +87,11 @@ def test_drift_gate_partitions_every_month(summary, dash):
 
 
 def test_reliability_flag_agrees_with_the_threshold(summary, dash):
+    """The per-row flag is the threshold applied, not a separate judgement.
+
+    The flag is what the app renders. If it could disagree with the published
+    threshold, the caveat shown beside a figure would not describe that figure.
+    """
     limit = summary["price_drift"]["max_drift_pct"]
     for row in dash["by_month"]:
         drift = row["cost_period_drift_pct"]
@@ -94,6 +111,11 @@ def test_uncosted_revenue_is_carried_not_zero_costed(summary):
 
 
 def test_coverage_percentage_matches_the_amounts(summary):
+    """The quoted coverage percentage is its own two amounts divided.
+
+    Coverage is the headline caveat on every margin in the app; a stale
+    percentage beside fresh amounts understates what is missing.
+    """
     cov = summary["coverage"]
     expected = cov["revenue_costed"] / cov["revenue_total"] * 100
     assert abs(cov["coverage_pct"] - expected) < PCT_TOL
@@ -101,6 +123,11 @@ def test_coverage_percentage_matches_the_amounts(summary):
 
 @pytest.mark.parametrize("basis", ["measured", "indicative"])
 def test_margins_are_taken_against_costed_revenue(summary, basis):
+    """Margins divide by costed revenue — the same base their profit uses.
+
+    Dividing profit from costed lines by TOTAL revenue silently deflates every
+    margin by the uncosted share, which is currently about 5% of revenue.
+    """
     b = summary[basis]
     assert abs(b["gross_margin_pct"]
                - b["gross_profit"] / b["revenue_costed"] * 100) < PCT_TOL
@@ -147,6 +174,11 @@ def test_pricing_gap_rows_are_actually_under_priced(dash):
 
 
 def test_caveats_travel_with_the_figures(summary, dash):
+    """The caveats reach the app unchanged, and are never empty.
+
+    A caveat that lives only in the summary file is a caveat nobody reading the
+    app will ever see.
+    """
     assert summary["caveats"], "figures must not ship without their caveats"
     assert dash["caveats"] == summary["caveats"]
 

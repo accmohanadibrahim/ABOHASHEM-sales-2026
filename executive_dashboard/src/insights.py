@@ -25,6 +25,13 @@ def _insight(title, what, why, risk, opportunity, action, priority):
 
 
 def generate(kpis, customers, products, receivables, monthly, dq, focus_month=None) -> dict:
+    """Write the commentary shown under each chart, from the computed numbers.
+
+    Generated from the figures rather than written per month, so commentary
+    cannot drift from the chart above it. ``focus_month`` names the month being
+    shown: it was once pinned to June for every month, which put a June title on
+    the August card while the card below it said August.
+    """
     out: dict[str, dict] = {}
 
     # The headline names the month actually being shown. It was pinned to

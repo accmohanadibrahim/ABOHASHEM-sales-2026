@@ -42,28 +42,33 @@ CENT = 0.02         # EGP, against our own rounded output
 
 
 def _load(name):
+    """Read one processed CSV as a list of dict rows."""
     with (P / name).open(encoding="utf-8") as fh:
         return list(csv.DictReader(fh))
 
 
 @pytest.fixture(scope="module")
 def dash():
+    """The margin dashboard payload the app reads."""
     return json.loads(DASHBOARD.read_text(encoding="utf-8"))
 
 
 @pytest.fixture(scope="module")
 def stmt():
+    """The income-statement series, keyed by period."""
     return {r["period"]: r for r in _load("income_statements_by_month.csv")}
 
 
 @pytest.fixture(scope="module")
 def cuts():
+    """The three monthly profitability cuts: item, customer and rep."""
     return {"item": _load("margin_by_item_month.csv"),
             "customer": _load("margin_by_customer_month.csv"),
             "rep": _load("margin_by_rep_month.csv")}
 
 
 def _by_month(rows, field):
+    """Sum one numeric field per month across a cut."""
     out = {}
     for r in rows:
         out[r["month"]] = out.get(r["month"], 0.0) + float(r[field])
@@ -118,6 +123,12 @@ def test_cost_month_agrees_with_the_june_detail(dash):
 # ------------------------------------------------------------- the boundaries
 
 def test_months_without_a_statement_are_absent(cuts):
+    """A month with no statement to calibrate on emits no rows at all.
+
+    Not zero rows' worth of zeroes — absent. Emitting such a month would put a
+    calibrated margin on screen for a period where nothing was measured to
+    calibrate against.
+    """
     for name, rows in cuts.items():
         months = {r["month"] for r in rows}
         assert not (months & NO_STATEMENT), (
@@ -125,6 +136,11 @@ def test_months_without_a_statement_are_absent(cuts):
 
 
 def test_quarter_months_keep_the_estimated_flag(cuts):
+    """The three allocated months stay flagged estimated, and only those.
+
+    The flag is what the app and the Excel «basis» column render. Losing it on
+    an allocated month presents an allocation as a measurement.
+    """
     for name, rows in cuts.items():
         for r in rows:
             want = r["month"] in QUARTER_MONTHS
@@ -133,6 +149,12 @@ def test_quarter_months_keep_the_estimated_flag(cuts):
 
 
 def test_every_row_carries_a_basis(dash):
+    """Every monthly row says how it was derived, with a real boolean.
+
+    A row with no basis is a figure that cannot say whether it was measured or
+    calibrated — and these rows are exported to Excel, where the reader has
+    only the column to go on.
+    """
     for key in ("by_item_month", "by_customer_month", "by_rep_month"):
         for r in dash[key]:
             assert r["basis"] in ("measured", "calibrated"), (key, r)
