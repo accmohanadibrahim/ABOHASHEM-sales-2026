@@ -45,13 +45,19 @@ def dict_to_df(d, key_label="المؤشر", val_label="القيمة"):
 
 
 def main():
+    """Write every analysis output into one styled multi-sheet workbook.
+
+    For the Board, investor and bank readers who work in Excel rather than in
+    CSV or JSON. Reads only the processed outputs, so the workbook cannot
+    disagree with the dashboards — both are views of the same files.
+    """
     with pd.ExcelWriter(OUT, engine="openpyxl") as writer:
         # 1. Executive summary
         eda = json.load(open(P / "eda_summary.json", encoding="utf-8"))
         fin = json.load(open(P / "financial_analysis.json", encoding="utf-8"))
         dq = json.load(open(P / "data_quality_metrics.json", encoding="utf-8"))
         summary_rows = [
-            ("إجمالي الإيراد (18 شهرًا)", fin["total_revenue_egp"]),
+            (f"إجمالي الإيراد ({fin.get('n_months', '')} شهرًا)", fin["total_revenue_egp"]),
             ("إيراد آخر 12 شهرًا (Trailing 12M)", fin["trailing_12m_revenue_egp"]),
             ("متوسط الإيراد الشهري (آخر 12 شهرًا)", fin["avg_monthly_revenue_t12_egp"]),
             ("القيمة الاسمية الإجمالية (الكمية × السعر)", fin["gross_list_value_egp"]),
@@ -66,7 +72,7 @@ def main():
             ("مؤشر تركّز العملاء HHI", fin["hhi_customers"]),
             ("مؤشر تركّز العلامات التجارية HHI", fin["hhi_brands"]),
             ("مؤشر تركّز الأصناف HHI", fin["hhi_items"]),
-            ("صافي رصيد المديونية (لقطة 2026/7/4)", fin["ar_total_net_balance_egp"]),
+            (f"صافي رصيد المديونية (لقطة {fin.get('ar_as_of', '')})", fin["ar_total_net_balance_egp"]),
             ("أيام الذمم المدينة التقريبية (DSO)", fin["dso_proxy_days"]),
             ("حصة أعلى 10 مدينين من إجمالي المديونية %", fin["ar_top10_debtor_share_pct"]),
             ("إجمالي الفواتير المُحلَّلة", dq["n_invoices"]),
@@ -98,7 +104,7 @@ def main():
         write_df(writer, pd.read_csv(P / "dim_customers.csv"), "8_دليل العملاء")
 
         # 8. AR balances
-        ar = pd.read_csv(P / "ar_customer_balances_2026-07-04.csv")
+        ar = pd.read_csv(P / "ar_customer_balances_current.csv")
         ar["net_balance"] = ar["debit"] - ar["credit"]
         write_df(writer, ar, "9_أرصدة المديونية 2026-07-04")
 

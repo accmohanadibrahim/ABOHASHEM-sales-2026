@@ -13,6 +13,10 @@ import numpy as np
 import pandas as pd
 from statsmodels.tsa.holtwinters import Holt
 from pathlib import Path
+import sys
+from pathlib import Path as _Path
+sys.path.insert(0, str(_Path(__file__).resolve().parent))
+from lib.names import best as _best_label  # noqa: E402
 
 warnings.filterwarnings("ignore")
 ROOT = Path(__file__).resolve().parent.parent
@@ -44,6 +48,13 @@ def build_series(df, group_col, group_val, months):
 
 
 def main():
+    """Forecast each brand, top customer and top item with Holt's linear trend.
+
+    One model class for every series rather than a per-series grid search: at
+    this granularity the extra fit does not change a decision, and searching per
+    series would let a handful of short noisy series pick exotic models.
+    Each series' own residual standard deviation sets its interval width.
+    """
     df = pd.read_csv(TX, dtype={"customer_code": str})
     df["invoice_date_parsed"] = pd.to_datetime(df["invoice_date"], format="%Y/%m/%d")
     df["month"] = df["invoice_date_parsed"].dt.to_period("M").astype(str)
@@ -63,7 +74,8 @@ def main():
         )
 
     top_customers = df.groupby("customer_code")["line_total"].sum().sort_values(ascending=False).head(10).index
-    name_map = df.groupby("customer_code")["customer_name_raw"].agg(lambda s: s.value_counts().index[0])
+    name_map = df.groupby("customer_code")["customer_name_raw"].agg(_best_label)
+    name_map = name_map.where(name_map.notna(), "عميل " + name_map.index.to_series())
     for code in top_customers:
         y = build_series(df, "customer_code", code, months)
         point, se, method = holt_forecast(y)

@@ -34,6 +34,13 @@ def clean(obj):
 
 
 def main():
+    """Bundle every processed output into dashboards/data.js as one JS assignment.
+
+    Embedded rather than fetched because the dashboards are opened straight from
+    disk: a ``file://`` page cannot fetch its own JSON without tripping CORS, so
+    a data file that works over HTTP would silently render an empty dashboard for
+    the person who double-clicks the HTML.
+    """
     data = {}
     data["parse_log"] = rd_json("parse_log.json")
     data["dimension_log"] = rd_json("dimension_log.json")
@@ -81,7 +88,7 @@ def main():
     dim_customers = rd_csv("dim_customers.csv")
     data["dim_customers"] = json.loads(dim_customers.to_json(orient="records"))
 
-    ar = rd_csv("ar_customer_balances_2026-07-04.csv")
+    ar = rd_csv("ar_customer_balances_current.csv")
     ar["net_balance"] = ar["debit"] - ar["credit"]
     data["ar_balances"] = json.loads(ar.to_json(orient="records"))
 

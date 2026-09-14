@@ -23,6 +23,10 @@ import json
 import difflib
 import pandas as pd
 from pathlib import Path
+import sys
+from pathlib import Path as _Path
+sys.path.insert(0, str(_Path(__file__).resolve().parent))
+from lib.names import best as _best_label  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 TX_CSV = ROOT / "data" / "processed" / "sales_transactions.csv"
@@ -110,6 +114,12 @@ def normalize(s: str) -> str:
 
 
 def main():
+    """Build the item dimension and attach brand and carton size to every line.
+
+    An item code carrying no usable name in any source keeps the honest
+    «صنف <code>» placeholder and is listed in the log — never an invented name,
+    and never dropped along with its revenue.
+    """
     df = pd.read_csv(TX_CSV)
     log = {"matched_master": 0, "matched_keyword": 0, "unclassified": [], "n_items": 0}
 
@@ -117,11 +127,16 @@ def main():
                     for (name, brand), carton in zip(MASTER_BRAND, MASTER_CARTON)]
 
     g = df.groupby("item_code").agg(
-        item_name=("item_name_raw", lambda s: s.value_counts().index[0]),
+        # An item code with no usable name anywhere gets an honest label below.
+        item_name=("item_name_raw", _best_label),
         total_revenue=("line_total", "sum"),
         total_qty=("qty", "sum"),
         n_lines=("item_name_raw", "count"),
     ).reset_index()
+    # Label — never fabricate — an item code that carries no name in any source.
+    nameless = g["item_name"].isna()
+    g.loc[nameless, "item_name"] = "صنف " + g.loc[nameless, "item_code"].astype(str)
+    log["items_with_no_name_in_any_source"] = sorted(g.loc[nameless, "item_code"].astype(str))
     log["n_items"] = len(g)
 
     rows = []

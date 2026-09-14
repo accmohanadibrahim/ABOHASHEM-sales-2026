@@ -145,6 +145,13 @@ def summarize_cv(errors):
 
 
 def main():
+    """Compare the honestly-estimable model classes and write the 7-month forecast.
+
+    Selection is by rolling-origin cross-validated RMSE, not in-sample fit: with
+    only eighteen monthly observations an in-sample criterion rewards the model
+    that memorises the series. AIC/BIC are recorded alongside for reference and
+    are not what picks the winner.
+    """
     m = pd.read_csv(M_CSV)
     y = m["revenue"].values
     months = m["month"].tolist()
@@ -222,7 +229,7 @@ def main():
         historical_revenue=y.tolist(),
         method_note=(f"يعتمد اختيار النموذج على التحقق المتدحرج (Rolling-origin, expanding window, one-step-ahead) "
                       f"عبر آخر {len(next(iter(cv_errors.values())))} أشهر، باختيار النموذج الأقل خطأ (RMSE) خارج "
-                      "العيّنة؛ ثم تتم إعادة معايرة هذا النموذج على كامل تاريخ الـ18 شهرًا لإنتاج توقع 7 أشهر مقبلة "
+                      f"العيّنة؛ ثم تتم إعادة معايرة هذا النموذج على كامل تاريخ الـ{len(months)} شهرًا لإنتاج توقع 7 أشهر مقبلة "
                       "مع فترة ثقة 95% مبنية على تقريب التوزيع الطبيعي."),
     )
     with open(OUT, "w", encoding="utf-8") as f:
