@@ -50,7 +50,8 @@ FONTS = {"Cairo-400.woff2": 400, "Cairo-600.woff2": 600, "Cairo-700.woff2": 700}
 # them, the app last.
 VENDOR = ["react.production.min.js", "react-dom.production.min.js"]
 MODULES = ["dash-tokens.js", "dash-agg.js", "repo-adapter.js", "dash-aging.js",
-           "dash-margin.js", "dash-charts.js", "dash-export.js", "dash-app.js"]
+           "dash-margin.js", "dash-adhoc.js", "dash-charts.js", "dash-export.js",
+           "dash-app.js"]
 
 TITLE = "أبو هاشم للحوم — لوحة الأداء"
 THEME = "#0a0e1a"

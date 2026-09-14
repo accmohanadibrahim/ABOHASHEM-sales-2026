@@ -49,6 +49,12 @@ if [ "$QUICK" = 0 ]; then
   # decodes the PNG. The XLSX writer is hand-rolled, so it is proved not assumed.
   run "export checks" python3 mobile/tools/test_exports.py
 
+  # Drives the ad-hoc builder and reconciles the total it shows against the
+  # same figure computed a second way from the payload. The engine has unit
+  # tests; this is the half they cannot cover — that the controls are wired to
+  # it and that a drill-down still adds up to the row it was opened from.
+  run "ad-hoc reporting" python3 mobile/tools/test_adhoc.py
+
   # The build must be deterministic, or "nothing changed" cannot be told apart
   # from "changed and changed back".
   printf '\n== deterministic build\n'

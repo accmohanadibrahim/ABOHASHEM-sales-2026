@@ -188,6 +188,34 @@ function byRep(X){
   };
 }
 
+/* chAdhoc — the ad-hoc result as a horizontal bar.
+
+   Deliberately generic: the section lets the reader choose BOTH the dimension
+   and the measure, so a chart hard-coded to customers-by-revenue would go
+   stale the moment they changed either. Top 12 only — a phone bar chart of 238
+   customers is a texture, not a reading — and rows whose measure is null are
+   dropped rather than drawn at zero, because a bar of length zero is a claim
+   that something was measured and came out empty. */
+function adhocBars(rows, title, money){
+  const top = (rows||[]).filter(r => r && r.value != null).slice(0, 12);
+  if(!top.length) return EMPTY;
+  const b = ecBase();
+  return {...b,
+    tooltip:{...b.tooltip, trigger:"axis", axisPointer:{type:"shadow"},
+             valueFormatter: money ? egp : int},
+    grid:{...b.grid, left:4},
+    xAxis: ax(b,{type:"value",
+                 axisLabel:{...ax(b).axisLabel, formatter: money ? egpK : int}}),
+    yAxis: ax(b,{type:"category", data: top.map(r=>r.label).reverse(),
+                 axisLabel:{...ax(b).axisLabel, formatter:clip(14),
+                            width:92, overflow:"truncate"}}),
+    series:[{name:title, type:"bar",
+             itemStyle:{color:PAL[0], borderRadius:[0,5,5,0]},
+             data: top.map(r=>r.value).reverse()}],
+    _cats: top.map(r=>r.key).reverse(),
+  };
+}
+
 /* chAgingBar */
 function agingBar(X, D){
   const bk = X.buckets, lab = (D.receivables&&D.receivables.bucket_labels)||{};
@@ -703,7 +731,7 @@ function arMovementChart(mv){
   };
 }
 
-return {ecBase,isEmpty,H,monthly,daily,variance,topCustomers,topProducts,byRep,agingBar,bonusDist,agingWaterfall,salesWaterfall,pareto,donut,gauge,treemap,priceBox,scatter,radar,sunburst,sankey,heatmap,histogram,collectionsMonthly,collectionsByRep,worstCollectors,arMovement,arMovementChart};
+return {ecBase,isEmpty,H,monthly,daily,variance,topCustomers,topProducts,byRep,adhocBars,agingBar,bonusDist,agingWaterfall,salesWaterfall,pareto,donut,gauge,treemap,priceBox,scatter,radar,sunburst,sankey,heatmap,histogram,collectionsMonthly,collectionsByRep,worstCollectors,arMovement,arMovementChart};
 })();
 /* Hosts one ECharts instance. SVG renderer: crisp on high-DPI phones, no
    devicePixelRatio sizing bugs, and it survives printing. The instance is

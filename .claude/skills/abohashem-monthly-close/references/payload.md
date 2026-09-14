@@ -112,6 +112,29 @@ Work backwards, and suspect hop 1 first:
 3. **Is it a filtered view of an unfilterable quantity?** See above.
 4. Only then look at the section code.
 
+## The ad-hoc section is different, and that is deliberate
+
+`mobile/src/dash-adhoc.js` (namespace `Q`) reads `window.DASH.lines` **directly**
+and carries its own period and filters, instead of taking the filtered context
+every other section receives. That is not an oversight: a query builder whose
+scope is quietly narrowed by the global month chip reports a number the reader
+cannot account for.
+
+Consequences for a close round:
+
+* It needs no wiring when a month lands. New lines flow into it because it reads
+  the same `lines` array — there is no per-section registration of months.
+* Its four rules are data-shaped, so **re-check them when the extract changes**:
+  customers group by `customer_code` (84 codes carry several name spellings),
+  `boxes` null is not zero (232 weight-sold lines), bonus is out of revenue by
+  default (415 lines, 24,305 units, 740.00 EGP), and both quantities accumulate
+  side by side. `mobile/tests/mobile.test.js` pins all four on a fixture, and
+  `mobile/tools/test_adhoc.py` re-checks them against the real bundle.
+* **There is no customer type in any payload.** If a future extract adds one,
+  it belongs in `Q.DIMS` and `Q.FILTERS` as a real dimension; until then the
+  ABC/XYZ classes stand in, under a label that says they are derived. Do not
+  invent a type from city, rep, or revenue band.
+
 ## Adding a section
 
 Whatever else you do, the three that are always missed:

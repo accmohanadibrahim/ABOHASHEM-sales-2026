@@ -511,3 +511,207 @@ test("PNG chart export cleans up after an ECharts failure", () => {
   assert.throws(() => X.chartPNGDataURL(entry, 2), /render failed/);
   assert.deepEqual(events, ["dispose", "remove"]);
 });
+
+/* ---------------------------------------------------------------------------
+   Ad-hoc query engine (namespace Q).
+
+   The engine lets a user pick the grouping, so the tests below fix the four
+   rules that the CURRENT extract makes load-bearing. Each one is a case where
+   the obvious implementation produces a number that looks fine and is wrong:
+   grouping customers by name, treating an uncounted box as zero, folding free
+   goods into revenue, and letting a free line into the average-price
+   denominator.
+--------------------------------------------------------------------------- */
+
+const adhoc = () => load(["dash-adhoc.js"], ["Q"]).Q;
+
+/* One customer (code 7) spelled two ways, one weight-sold item with no box
+   count, one bonus line, one fully-free priced line. Small enough to reason
+   about by hand, which is what makes a failure here readable. */
+function adhocLines() {
+  return [
+    {invoice_no:"A1", invoice_date:"2026-03-05", month:"2026-03", customer_code:"7",
+     customer_name:"ثلاجة السيد", rep:"سالم", item_code:"10", item_name:"برجر",
+     brand:"الهنا", qty:10, unit_price:100, line_total:1000, boxes:2, is_bonus:false},
+    {invoice_no:"A2", invoice_date:"2026-03-20", month:"2026-03", customer_code:"7",
+     customer_name:"ثلجه السيد", rep:"سالم", item_code:"10", item_name:"برجر",
+     brand:"الهنا", qty:5, unit_price:100, line_total:500, boxes:1, is_bonus:false},
+    {invoice_no:"A3", invoice_date:"2026-04-02", month:"2026-04", customer_code:"9",
+     customer_name:"مطعم النور", rep:"هدى", item_code:"20", item_name:"مفروم بالوزن",
+     brand:"ابوهاشم", qty:40, unit_price:25, line_total:1000, boxes:null, is_bonus:false},
+    {invoice_no:"A3", invoice_date:"2026-04-02", month:"2026-04", customer_code:"9",
+     customer_name:"مطعم النور", rep:"هدى", item_code:"10", item_name:"برجر",
+     brand:"الهنا", qty:8, unit_price:0, line_total:0, boxes:1, is_bonus:true},
+  ];
+}
+
+const adhocCtx = Q => Q.context(
+  {meta:{available_months:[{v:"2026-03",l:"مارس 2026"},{v:"2026-04",l:"أبريل 2026"}]},
+   lines: adhocLines()},
+  {dim_customers:[{customer_code:"7", customer_name:"ثلاجة السيد الوكيل"}],
+   customer_pareto:[{customer_code:"7", abc_class:"A", xyz_class:"X"},
+                    {customer_code:"9", abc_class:"B", xyz_class:"Y"}]});
+
+test("customers group by code, so name variants stay one customer", () => {
+  const Q = adhoc();
+  const out = Q.run(adhocLines(), {period:{mode:"all"}, groupBy:"customer"}, adhocCtx(Q));
+  const seven = out.allRows.find(r => r.key === "7");
+
+  /* Two spellings, one row, both invoices — grouping on the name would have
+     produced two rows of 1000 and 500 and a ranking that reads wrong. */
+  assert.equal(out.allRows.length, 2);
+  assert.equal(seven.revenue, 1500);
+  assert.equal(seven.invoices, 2);
+  /* The label is the resolved name from dim_customers, not either raw
+     spelling, and the merge is declared rather than silent. */
+  assert.equal(seven.label, "ثلاجة السيد الوكيل");
+  assert.ok(out.meta.warnings.some(w => w.includes("أكثر من صيغة اسم")));
+});
+
+test("an uncounted box is null, never zero, and its absence is counted", () => {
+  const Q = adhoc();
+  const ctx = adhocCtx(Q);
+  const byItem = Q.run(adhocLines(), {period:{mode:"all"}, groupBy:"item", bonus:"both"}, ctx);
+
+  const weight = byItem.allRows.find(r => r.key === "20");
+  /* Sold by weight: never counted in boxes. Zero would claim it shipped no
+     boxes, which is a measurement nobody made. */
+  assert.equal(weight.boxes, null);
+  assert.equal(weight.boxes_missing, 1);
+
+  const burger = byItem.allRows.find(r => r.key === "10");
+  assert.equal(burger.boxes, 4);          /* 2 + 1 + 1, all counted */
+  assert.equal(burger.boxes_missing, 0);
+
+  /* The total says how much of itself is missing, so a reader never takes a
+     partial box count for a complete one. */
+  assert.equal(byItem.total.boxes, 4);
+  assert.equal(byItem.total.boxes_missing, 1);
+  assert.ok(byItem.meta.warnings.some(w => w.includes("بلا عدد كراتين")));
+});
+
+test("bonus is excluded from revenue but always reported beside it", () => {
+  const Q = adhoc();
+  const ctx = adhocCtx(Q);
+  const spec = {period:{mode:"all"}, groupBy:"customer"};
+
+  const regular = Q.run(adhocLines(), {...spec, bonus:"regular"}, ctx);
+  const both    = Q.run(adhocLines(), {...spec, bonus:"both"},    ctx);
+  const only    = Q.run(adhocLines(), {...spec, bonus:"bonus"},   ctx);
+
+  /* Free goods carry quantity and no money. Revenue is identical whether or
+     not they are in scope; quantity is not. */
+  assert.equal(regular.total.revenue, 2500);
+  assert.equal(both.total.revenue, 2500);
+  assert.equal(regular.total.qty, 55);
+  assert.equal(both.total.qty, 63);
+
+  /* The split travels on every row in every mode — that is what makes
+     "regular versus bonus" one comparison instead of two reports. */
+  const nine = regular.allRows.find(r => r.key === "9");
+  assert.equal(nine.regular_qty, 40);
+  assert.equal(nine.bonus_qty, 8);
+  assert.equal(nine.bonus_share, 8 / 48);
+
+  /* «البونص فقط» lists only who actually received one — customer 7 never did
+     and must not appear as a zero row. */
+  assert.deepEqual(plain(only.allRows.map(r => r.key)), ["9"]);
+});
+
+test("average price ignores free lines in its denominator", () => {
+  const Q = adhoc();
+  const ctx = adhocCtx(Q);
+  const byItem = Q.run(adhocLines(), {period:{mode:"all"}, groupBy:"item", bonus:"both"}, ctx);
+  const burger = byItem.allRows.find(r => r.key === "10");
+
+  /* 1500 EGP over 15 sold units. Letting the 8 free units into the
+     denominator would report 65.22 and call it the selling price. */
+  assert.equal(burger.asp, 100);
+});
+
+test("every dimension sums back to the same total", () => {
+  const Q = adhoc();
+  const ctx = adhocCtx(Q);
+  const base = Q.run(adhocLines(), {period:{mode:"all"}, groupBy:"month"}, ctx);
+
+  /* A grouping that loses or duplicates rows is the failure mode of an
+     engine like this, and it is invisible unless something adds it up. */
+  for (const dim of ["month","rep","customer","brand","item","invoice","abc","xyz"]) {
+    const out = Q.run(adhocLines(), {period:{mode:"all"}, groupBy:dim}, ctx);
+    const rev = out.allRows.reduce((a, r) => a + r.revenue, 0);
+    const qty = out.allRows.reduce((a, r) => a + r.qty, 0);
+    assert.equal(rev, base.total.revenue, `revenue drifted grouping by ${dim}`);
+    assert.equal(qty, base.total.qty, `quantity drifted grouping by ${dim}`);
+  }
+});
+
+test("a date range and the equivalent month select the same rows", () => {
+  const Q = adhoc();
+  const ctx = adhocCtx(Q);
+  const byMonth = Q.run(adhocLines(), {period:{mode:"month", month:"2026-03"}, groupBy:"rep"}, ctx);
+  const byRange = Q.run(adhocLines(),
+    {period:{mode:"range", from:"2026-03-01", to:"2026-03-31"}, groupBy:"rep"}, ctx);
+  assert.equal(byRange.total.revenue, byMonth.total.revenue);
+
+  /* Both ends inclusive: a range ending on the 5th must contain the 5th,
+     off-by-one here silently drops a day of sales at every month boundary. */
+  const oneDay = Q.run(adhocLines(),
+    {period:{mode:"range", from:"2026-03-05", to:"2026-03-05"}, groupBy:"rep"}, ctx);
+  assert.equal(oneDay.total.revenue, 1000);
+});
+
+test("an empty filter means all; a filter matching nothing means nothing", () => {
+  const Q = adhoc();
+  const ctx = adhocCtx(Q);
+  const all  = Q.run(adhocLines(), {period:{mode:"all"}, groupBy:"rep", filters:{rep:[]}}, ctx);
+  const none = Q.run(adhocLines(),
+    {period:{mode:"all"}, groupBy:"rep", filters:{rep:["لا أحد"]}}, ctx);
+  const one  = Q.run(adhocLines(),
+    {period:{mode:"all"}, groupBy:"rep", filters:{rep:["سالم"]}}, ctx);
+
+  assert.equal(all.total.revenue, 2500);
+  assert.equal(none.total.revenue, 0);
+  assert.equal(none.allRows.length, 0);
+  assert.equal(one.total.revenue, 1500);
+  assert.ok(none.meta.warnings.some(w => w.includes("لا توجد بنود مطابقة")));
+});
+
+test("missing values sort last whichever way the column is sorted", () => {
+  const Q = adhoc();
+  const ctx = adhocCtx(Q);
+  const desc = Q.run(adhocLines(),
+    {period:{mode:"all"}, groupBy:"item", bonus:"both", sort:{by:"boxes", dir:"desc"}}, ctx);
+  const asc = Q.run(adhocLines(),
+    {period:{mode:"all"}, groupBy:"item", bonus:"both", sort:{by:"boxes", dir:"asc"}}, ctx);
+
+  /* Ascending is the trap: a null floated to the top would present "never
+     counted" as "the smallest number". */
+  assert.equal(desc.allRows[desc.allRows.length - 1].boxes, null);
+  assert.equal(asc.allRows[asc.allRows.length - 1].boxes, null);
+});
+
+test("drill-down returns exactly the lines its summary row was built from", () => {
+  const Q = adhoc();
+  const ctx = adhocCtx(Q);
+  const spec = {period:{mode:"all"}, groupBy:"customer", bonus:"regular"};
+  const row = Q.run(adhocLines(), spec, ctx).allRows.find(r => r.key === "7");
+  const lines = Q.drill(adhocLines(), spec, ctx, "7");
+
+  assert.equal(lines.length, row.lines);
+  assert.equal(lines.reduce((a, l) => a + l.line_total, 0), row.revenue);
+  /* In «البيع فقط» the detail must not show the free lines the summary
+     excluded, or the two disagree in front of the reader. */
+  assert.ok(lines.every(l => !l.is_bonus));
+});
+
+test("a pivot cell equals the grouped run for that month", () => {
+  const Q = adhoc();
+  const ctx = adhocCtx(Q);
+  const spec = {period:{mode:"all"}, groupBy:"customer", bonus:"regular"};
+  const pv = Q.pivot(adhocLines(), spec, ctx, "revenue");
+  const march = Q.run(adhocLines(),
+    {...spec, period:{mode:"month", month:"2026-03"}}, ctx).allRows.find(r => r.key === "7");
+
+  assert.deepEqual(plain(pv.months), ["2026-03", "2026-04"]);
+  assert.equal(pv.rows.find(r => r.key === "7").cells["2026-03"], march.revenue);
+});

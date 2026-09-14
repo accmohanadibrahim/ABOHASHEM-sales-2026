@@ -50,7 +50,12 @@ class App extends React.Component {
       const RD = window.DASH_DATA || null;
       const R2 = RD ? R : null;
       const rfOpts = (R2&&RD) ? R2.filterOptions(RD) : null;
-      this.setState({ready:true, T, A, AG, C, api, filters:f, R:R2, RD, rfOpts,
+      /* The ad-hoc context walks every line to resolve customer-name variants
+         and item names, so it is built once here with the payload rather than
+         on each render of the builder. */
+      const qctx = api ? Q.context(D, RD) : null;
+      const qOpts = api ? Q.options(D.lines||[], qctx) : null;
+      this.setState({ready:true, T, A, AG, C, api, filters:f, R:R2, RD, rfOpts, qctx, qOpts,
                      snaps, snap,
                      src: api ? "dash" : "repo",
                      section: api ? this.state.section : (RD?"fin":this.state.section)});
@@ -297,6 +302,12 @@ class App extends React.Component {
     push("الربحية والتقارير","repo","margin");
     push("الربحية والتقارير","repo","expenses");
     push("الربحية والتقارير","repo","reports");
+    /* Reads window.DASH directly rather than the filtered context: the whole
+       point is that it carries its OWN period and filters, so the global
+       month chip must not silently narrow it underneath the reader. */
+    push("الربحية والتقارير","dash","adhoc",
+      {label:"تقارير مرنة", h2:"تقارير مرنة (Ad-hoc)",
+       p:"اختر الفترة والفلاتر والتجميع والمقاييس — ثم انزل إلى الفاتورة والبند"});
 
     push("تحليلات وجودة البيانات","dash","analytics");
     push("تحليلات وجودة البيانات","dash","quality",null,"جودة البيانات — الفواتير");
@@ -1091,6 +1102,7 @@ class App extends React.Component {
     if(s==="overdue") return this.overdueBody(X,T,api);
     if(s==="armove") return this.arMoveBody(X,T,api);
     if(s==="reports") return this.reports();
+    if(s==="adhoc") return this.adhocBody(X,T,api);
 
     const bl=k=>(D.receivables&&D.receivables.bucket_labels)?D.receivables.bucket_labels[k]:k;
     /* Tap handlers: map a click on a category chart back onto a filter. */
@@ -2076,10 +2088,272 @@ class App extends React.Component {
      Filters are applied only on columns a row actually carries (rep, brand,
      customer). Anything the row cannot be filtered on is exported whole rather
      than half-filtered, and the sheet states the row count either way. */
+  /* ------------------------------------------------------------- ad-hoc ----
+     Every other section answers one question with a grouping fixed in code.
+     This one holds the question as state — period, filters, dimension,
+     measures — so a question nobody anticipated costs a few taps instead of a
+     release. All arithmetic lives in namespace Q and is unit-tested there;
+     what follows only turns a spec into controls and a result into cards.
+
+     It reads window.DASH directly and keeps its own period, deliberately: a
+     builder whose scope is quietly narrowed by the global month chip would
+     report a number the reader cannot account for. */
+  qSpec(){
+    return this.state.q || {
+      period:{mode:"all"}, filters:{}, bonus:"regular", groupBy:"month",
+      measures:["revenue","qty","invoices","customers"],
+      sort:{by:"revenue", dir:"desc"}, limit:null};
+  }
+  qSet(patch){
+    /* Paging and any open drill-down reset with the query: page 7 of a table
+       that just changed shape shows rows nobody asked for, and a detail list
+       left over from the previous question is worse than none. */
+    this.setState({q:{...this.qSpec(), ...patch}, pages:{}, sheet:null, qDrill:null});
+  }
+  qToggle(bucket, key, val){
+    const spec=this.qSpec();
+    const cur=(spec[bucket] && spec[bucket][key]) || [];
+    const next=cur.indexOf(val)===-1 ? cur.concat([val]) : cur.filter(v=>v!==val);
+    this.qSet({[bucket]:{...(spec[bucket]||{}), [key]:next}});
+  }
+  qToggleMeasure(key){
+    const cur=this.qSpec().measures||[];
+    const next=cur.indexOf(key)===-1 ? cur.concat([key]) : cur.filter(v=>v!==key);
+    /* Never zero columns — a table with no measure is a list of labels. */
+    this.qSet({measures: next.length ? next : [key]});
+  }
+  qChip(k, label, on, onClick){
+    return React.createElement("span",{key:k, onClick,
+      style:{flex:"none", fontSize:10.5, padding:"5px 10px", borderRadius:99,
+        cursor:"pointer", fontWeight:on?700:500, whiteSpace:"nowrap",
+        background:on?"rgba(59,130,246,.16)":"rgba(255,255,255,.03)",
+        border:"1px solid "+(on?"rgba(59,130,246,.45)":"rgba(255,255,255,.09)"),
+        color:on?"#93c5fd":"#cbd5e1"}}, label);
+  }
+  qRow(label, chips, hint){
+    return React.createElement("div",{key:label,
+      style:{display:"flex", flexDirection:"column", gap:6}},
+      React.createElement("div",{key:"l", style:{display:"flex", alignItems:"baseline", gap:7}},
+        React.createElement("span",{style:{fontSize:10.5, color:"#64748b"}}, label),
+        hint?React.createElement("span",{style:{fontSize:9.5, color:"#475569"}}, hint):null),
+      React.createElement("div",{key:"c",
+        style:{display:"flex", gap:5, flexWrap:"wrap"}}, chips));
+  }
+  qFmt(mk, v){
+    const T=this.state.T, m=Q.MEASURES.find(x=>x.key===mk);
+    if(v==null) return "—";
+    if(!m) return String(v);
+    if(m.fmt==="egp") return T.num(v);
+    if(m.fmt==="pct") return T.pct(v,1);
+    return T.int(v);
+  }
+
+  /* The current result as an export table, in the shape X.downloadCSV and
+     X.downloadXLSX already take. Built from the same run() the screen shows,
+     so the sheet and the table can never disagree. */
+  qTable(){
+    const st=this.state, ctx=st.qctx, api=st.api;
+    if(!ctx || !api) return null;
+    const spec=this.qSpec();
+    const res=Q.run(api.D.lines||[], spec, ctx);
+    const dim=Q.DIMS.find(d=>d.key===spec.groupBy)||Q.DIMS[0];
+    const cols=[{label:dim.label, get:r=>r.label}].concat(
+      (spec.measures||[]).map(mk=>{
+        const m=Q.MEASURES.find(x=>x.key===mk);
+        return {label:(m&&m.label)||mk, get:r=>r[mk]};
+      }));
+    /* The box column is only honest next to its gap, so the count of
+       uncounted lines travels with it into the sheet as well. */
+    if((spec.measures||[]).indexOf("boxes")!==-1)
+      cols.push({label:"بنود بلا كراتين", get:r=>r.boxes_missing});
+    return {id:"adhoc", label:"تقرير مرن — "+dim.label, rows:res.allRows, columns:cols};
+  }
+
+  adhocBody(X, T, api){
+    const st=this.state, D=api.D, C=st.C, ctx=st.qctx;
+    if(!ctx) return this.empty("محرك التقارير غير متاح");
+    const lines=D.lines||[], spec=this.qSpec();
+    const res=Q.run(lines, spec, ctx);
+    const opts=st.qOpts || Q.options(lines, ctx);
+    const meas=spec.measures||[];
+    const sortKey=(spec.sort&&spec.sort.by)||"revenue";
+    const dim=Q.DIMS.find(d=>d.key===spec.groupBy)||Q.DIMS[0];
+    const per=spec.period||{mode:"all"};
+    const out=[];
+
+    /* -- presets ------------------------------------------------------- */
+    out.push(this.card("تقارير جاهزة",
+      React.createElement("div",{style:{display:"flex", gap:5, flexWrap:"wrap"}},
+        Q.PRESETS.map(p=>this.qChip("pr"+p.id, p.label, false,
+          ()=>this.qSet({...p.spec, filters:spec.filters||{}})))),
+      {k:"qpre", sub:"نقطة بداية — كل عنصر يبقى قابلًا للتعديل"}));
+
+    /* -- period -------------------------------------------------------- */
+    const dateInput=(which)=>React.createElement("input",{key:which, type:"date",
+      value:per[which]||"",
+      onChange:e=>this.qSet({period:{...per, mode:"range", [which]:e.target.value}}),
+      style:{background:"rgba(255,255,255,.04)", color:"#e2e8f0", fontSize:11,
+        border:"1px solid rgba(255,255,255,.12)", borderRadius:9,
+        padding:"5px 8px", fontFamily:"'JetBrains Mono',monospace"}});
+
+    const periodChips=[
+      this.qChip("pa","كل الفترات", per.mode==="all", ()=>this.qSet({period:{mode:"all"}})),
+      this.qChip("pm","شهر محدد", per.mode==="month",
+        ()=>this.qSet({period:{mode:"month", month:per.month||D.meta.default_month||"2026-08"}})),
+      this.qChip("pr2","مدى تواريخ", per.mode==="range",
+        ()=>this.qSet({period:{mode:"range", from:per.from||"", to:per.to||""}})),
+    ];
+    const periodBody=[this.qRow("الفترة", periodChips)];
+    if(per.mode==="month")
+      periodBody.push(this.qRow("الشهر",
+        (D.meta.available_months||[]).map(m=>this.qChip("m"+m.v,
+          m.l+(api.monthHasData(m.v)?"":" — لا بيانات"), per.month===m.v,
+          ()=>this.qSet({period:{mode:"month", month:m.v}})))));
+    if(per.mode==="range")
+      periodBody.push(React.createElement("div",{key:"rg",
+        style:{display:"flex", gap:7, alignItems:"center", flexWrap:"wrap"}},
+        React.createElement("span",{key:"f", style:{fontSize:10.5, color:"#64748b"}},"من"),
+        dateInput("from"),
+        React.createElement("span",{key:"t", style:{fontSize:10.5, color:"#64748b"}},"إلى"),
+        dateInput("to")));
+    out.push(this.card("الفترة",
+      React.createElement("div",{style:{display:"flex", flexDirection:"column", gap:10}},
+        periodBody), {k:"qper", sub:res.meta.periodLabel}));
+
+    /* -- grouping, bonus mode, measures -------------------------------- */
+    out.push(this.card("التجميع والمقاييس",
+      React.createElement("div",{style:{display:"flex", flexDirection:"column", gap:10}},[
+        this.qRow("تجميع حسب", Q.DIMS.map(d=>this.qChip("d"+d.key, d.label,
+          spec.groupBy===d.key, ()=>this.qSet({groupBy:d.key}))),
+          dim.note||undefined),
+        this.qRow("البيع والبونص", Q.BONUS_MODES.map(b=>this.qChip("b"+b.key, b.label,
+          (spec.bonus||"regular")===b.key, ()=>this.qSet({bonus:b.key}))),
+          (Q.BONUS_MODES.find(b=>b.key===(spec.bonus||"regular"))||{}).note),
+        this.qRow("المقاييس المعروضة", Q.MEASURES.map(m=>this.qChip("ms"+m.key, m.label,
+          meas.indexOf(m.key)!==-1, ()=>this.qToggleMeasure(m.key))),
+          "اضغط للإضافة أو الإزالة"),
+        this.qRow("الترتيب", meas.map(mk=>{
+          const m=Q.MEASURES.find(x=>x.key===mk)||{label:mk};
+          const on=sortKey===mk;
+          return this.qChip("so"+mk, m.label+(on?(spec.sort.dir==="desc"?" ↓":" ↑"):""), on,
+            ()=>this.qSet({sort:{by:mk,
+              dir:(on && spec.sort.dir==="desc") ? "asc" : "desc"}}));
+        }).concat([this.qChip("solbl", dim.label+(sortKey==="label"?
+            (spec.sort.dir==="desc"?" ↓":" ↑"):""), sortKey==="label",
+          ()=>this.qSet({sort:{by:"label",
+            dir:(sortKey==="label" && spec.sort.dir==="desc")?"asc":"desc"}}))]),
+          "اضغط مرتين لعكس الاتجاه"),
+      ]), {k:"qdim"}));
+
+    /* -- filters ------------------------------------------------------- */
+    /* Multi-select, and each list is capped at what a thumb can scan. The
+       full catalogue stays reachable through the measures that name it — a
+       chip wall of 238 customers is not a filter, it is a wall. */
+    const fBody=Q.FILTERS.map(F=>{
+      const list=(opts[F.key]||[]);
+      const sel=(spec.filters&&spec.filters[F.key])||[];
+      if(!list.length)
+        return this.qRow(F.label, [React.createElement("span",{key:"na",
+          style:{fontSize:10, color:"#64748b"}},"غير متاح بالمصدر")]);
+      /* Selected values always render, even past the cap, so a filter can
+         never be active and invisible. */
+      const head=list.slice(0,24).map(o=>o[0]);
+      const show=list.filter(o=>head.indexOf(o[0])!==-1 || sel.indexOf(o[0])!==-1);
+      return this.qRow(F.label+(sel.length?" ("+sel.length+")":""),
+        [this.qChip("f"+F.key+"-all","الكل", !sel.length,
+          ()=>this.qSet({filters:{...(spec.filters||{}), [F.key]:[]}}))]
+        .concat(show.map(o=>this.qChip("f"+F.key+"-"+o[0], o[1],
+          sel.indexOf(o[0])!==-1, ()=>this.qToggle("filters", F.key, o[0])))),
+        list.length>show.length ? ("أكثر الـ"+show.length+" وزنًا من "+list.length) : undefined);
+    });
+    out.push(this.card("الفلاتر",
+      React.createElement("div",{style:{display:"flex", flexDirection:"column", gap:10}},
+        fBody), {k:"qflt", sub:"اختيار متعدد"}));
+
+    /* -- warnings ------------------------------------------------------ */
+    if(res.meta.warnings.length)
+      out.push(this.card("ما يجب أن يُقال عن هذه الأرقام",
+        React.createElement("div",{style:{display:"flex", flexDirection:"column", gap:6}},
+          res.meta.warnings.map((w,i)=>React.createElement("div",{key:i,
+            style:{fontSize:11, lineHeight:1.75, color:"#fbbf24",
+              paddingInlineStart:9,
+              borderInlineStart:"2px solid rgba(245,158,11,.5)"}}, w))),
+        {k:"qwarn"}));
+
+    /* -- totals -------------------------------------------------------- */
+    const tot=res.total;
+    out.push(this.card("الإجمالي",
+      React.createElement("div",{style:{display:"grid",
+        gridTemplateColumns:"repeat(auto-fit,minmax(96px,1fr))", gap:8}},
+        meas.map(mk=>{
+          const m=Q.MEASURES.find(x=>x.key===mk)||{label:mk};
+          return React.createElement("div",{key:mk,
+            style:{background:"rgba(255,255,255,.03)", borderRadius:11,
+              padding:"9px 10px", border:"1px solid rgba(255,255,255,.06)"}},
+            React.createElement("div",{key:"l",
+              style:{fontSize:9.5, color:"#64748b"}}, m.label),
+            React.createElement("div",{key:"v",
+              style:{fontSize:14, fontWeight:800, color:"#e2e8f0",
+                fontFamily:"'JetBrains Mono',monospace"}}, this.qFmt(mk, tot[mk])));
+        })),
+      {k:"qtot", sub:res.meta.groups+" "+dim.label+" · "+res.meta.matched+" بند"}));
+
+    /* -- chart --------------------------------------------------------- */
+    const money=(Q.MEASURES.find(m=>m.key===sortKey)||{}).fmt==="egp";
+    out.push(this.chartCard("الأعلى حسب "+((Q.MEASURES.find(m=>m.key===sortKey)||{}).label||sortKey),
+      C.adhocBars(res.allRows.map(r=>({key:r.key, label:r.label, value:r[sortKey]})),
+        dim.label, money),
+      {k:"qchart", sub:"أعلى 12"}));
+
+    /* -- table --------------------------------------------------------- */
+    const cols=[[dim.label, r=>r.label]].concat(
+      meas.map(mk=>[(Q.MEASURES.find(x=>x.key===mk)||{label:mk}).label,
+                    r=>this.qFmt(mk, r[mk])]));
+    out.push(this.card("النتيجة",
+      this.pagedList("qres", res.allRows, cols, r=>this.setState({qDrill:r.key})),
+      {k:"qtbl", sub:res.meta.groups+" صفًا · اضغط للتفصيل"}));
+
+    /* -- drill-down ---------------------------------------------------- */
+    /* The lines the tapped row was built from, not a fresh query: same
+       predicate, same bonus mode, so the detail always adds up to the
+       summary the reader just tapped. */
+    if(st.qDrill!=null){
+      const det=Q.drill(lines, spec, ctx, st.qDrill);
+      const row=res.allRows.find(r=>String(r.key)===String(st.qDrill));
+      out.push(this.card("تفصيل: "+((row&&row.label)||st.qDrill),
+        React.createElement("div",{style:{display:"flex", flexDirection:"column", gap:9}},[
+          React.createElement("div",{key:"x",
+            onClick:()=>this.setState({qDrill:null}),
+            style:{alignSelf:"flex-start", fontSize:10.5, color:"#93c5fd",
+              cursor:"pointer"}}, "✕ إغلاق التفصيل"),
+          this.pagedList("qdrill", det, [
+            ["الصنف", r=>r.item_name],
+            ["الإجمالي", r=>T.num(r.line_total)],
+            ["الكمية", r=>T.int(r.qty)],
+            ["الفاتورة", r=>r.invoice_no],
+            ["التاريخ", r=>this.ltr(r.invoice_date)],
+            ["العميل", r=>r.customer_name||ctx.custName(r.customer_code)],
+            ["المندوب", r=>r.rep],
+            ["العلامة", r=>r.brand],
+            ["سعر الوحدة", r=>T.num(r.unit_price)],
+            ["الكراتين", r=>r.boxes==null?"—":T.int(r.boxes)],
+            ["بونص", r=>r.is_bonus?"نعم":"لا"],
+          ]),
+        ]), {k:"qdr", sub:det.length+" بند"}));
+    }
+
+    return out;
+  }
+
   exportTables(){
     const st=this.state, num=v=>(v==null||v===""?null:Number(v));
     const col=(label,key,fn)=>({label, get:fn||(r=>r[key])});
     const out=[];
+
+    /* The ad-hoc result is exportable like any other sheet, but only once the
+       reader has actually built one: shipping a default query in every
+       workbook would put a table nobody asked for next to the ones they did. */
+    if(st.q){ const qt=this.qTable(); if(qt && qt.rows.length) out.push(qt); }
 
     const mf=(rows,pred)=>rows.filter(pred);
 
